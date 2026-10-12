@@ -1,0 +1,65 @@
+diff --git a/src/optimizer/statistics/operator/propagate_aggregate.cpp b/src/optimizer/statistics/operator/propagate_aggregate.cpp
+index 23b10cbf4c70..4de83ed3ce92 100644
+--- a/src/optimizer/statistics/operator/propagate_aggregate.cpp
++++ b/src/optimizer/statistics/operator/propagate_aggregate.cpp
+@@ -533,9 +533,14 @@ unique_ptr<NodeStatistics> StatisticsPropagator::PropagateStatistics(LogicalAggr
+ 	}
+ 	aggr.distinct_validity = distinct_validity;
+ 
++	const auto is_ungrouped = aggr.groups.empty();
+ 	// after we propagate statistics - try to directly execute aggregates using statistics
+ 	TryExecuteAggregates(aggr, node_ptr);
+ 
++	if (is_ungrouped) {
++		// Ungrouped aggregate always returns exactly one row, even over empty input
++		return make_uniq<NodeStatistics>(1U, 1U);
++	}
+ 	// the max cardinality of an aggregate is the max cardinality of the input (i.e. when every row is a unique
+ 	// group)
+ 	return std::move(node_stats);
+diff --git a/test/sql/subquery/exists/test_issue_26401.test b/test/sql/subquery/exists/test_issue_26401.test
+new file mode 100644
+index 000000000000..e848a3fe6fb2
+--- /dev/null
++++ b/test/sql/subquery/exists/test_issue_26401.test
+@@ -0,0 +1,40 @@
++# name: test/sql/subquery/exists/test_issue_26401.test
++# description: EXISTS with aggregate over empty table - statistics must not remove LIMIT 1
++# group: [exists]
++
++statement ok
++CREATE TABLE t (a INT);
++
++statement ok
++INSERT INTO t VALUES (1), (2);
++
++statement ok
++CREATE TABLE e (a INT);
++
++# inner NOT EXISTS over empty table is true, so outer EXISTS is true
++query T
++SELECT EXISTS (SELECT 1 FROM t WHERE NOT EXISTS (SELECT 1 FROM e));
++----
++1
++
++# double negation: no rows should survive
++query I
++SELECT a FROM t WHERE NOT EXISTS (SELECT 1 FROM t WHERE NOT EXISTS (SELECT 1 FROM e));
++----
++
++# sanity: single level still works
++query I
++SELECT * FROM t WHERE NOT EXISTS (SELECT 1 FROM e) ORDER BY a;
++----
++1
++2
++
++query T
++SELECT EXISTS (SELECT 1 FROM e);
++----
++0
++
++query T
++SELECT NOT EXISTS (SELECT 1 FROM e);
++----
++1

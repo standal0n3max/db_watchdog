@@ -1,0 +1,697 @@
+{
+  "note": "Метки проставлены до прогона фильтра: 10 коммитов с правкой src/ и test/*.test, 10 без такой пары. Амальгама sqlite3.c и sqlite3.h кодом ядра не считается.",
+  "changes": [
+    {
+      "sha": "bfb858c596f617c7ae74fd74672fae0d101a1588",
+      "subject": "Ensure the join flags on the parent are set correctly when flattening UNION ALL sub-queries that include branches with RIGHT joins. Report [bugs:/info/2026-10-08T15:27:33Z | 2026-10-08T15:27:33Z].",
+      "body": "FossilOrigin-Name: cfa69ea48a7aa379ee0c30ae81d2802da862d610f829c933e5eb358c23fc2b9d\n",
+      "parent_count": 1,
+      "base_sha": "d0fe192fa13a59a5fa6365c8e03d8f3b3d944851",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 8,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/select.c",
+          "additions": 2,
+          "deletions": 3,
+          "status": "modified"
+        },
+        {
+          "path": "test/unionall2.test",
+          "additions": 61,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "28e05e55f68d84c08e023aca71a5ecbad274be55",
+      "subject": "Avoid clearing unrelated join related expression flags when processing window function queries. Report [bugs:/info/2026-10-08T15:38:26Z | 2026-10-08T15:38:26Z].",
+      "body": "FossilOrigin-Name: c50d7f682cc95715e4577413196dbdb2845d7c845b0e760c7060b7cdcda87770\n",
+      "parent_count": 1,
+      "base_sha": "ab1268f758d9fb5351efbff1e4713c8049b7198a",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 7,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/window.c",
+          "additions": 4,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "test/windowD.test",
+          "additions": 55,
+          "deletions": 2,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "74675a9e87c45888a4ba2ea009a91fbc769539f8",
+      "subject": "Assign the correct encoding to the BLOB values read from an overflow page. [bugs:/info/2026-10-07T15:44:40Z|Bug 2026-10-07T15:44:40Z]",
+      "body": "FossilOrigin-Name: a8895cb047a3aeed35642111fa79bde9db962a5d7bc3f0cc472b4dbe510cb3f9\n",
+      "parent_count": 1,
+      "base_sha": "644fa62518a4f7b15a2d9b3b1c15aa5012c6782b",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 7,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/vdbe.c",
+          "additions": 1,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "test/enc.test",
+          "additions": 11,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "644fa62518a4f7b15a2d9b3b1c15aa5012c6782b",
+      "subject": "Fix processing of LEFT JOIN when the right operand is controlled by an IN loop.  [bugs:/info/2026-10-07T23:22:09Z|Bug 2026-10-07T23:22:09Z].",
+      "body": "FossilOrigin-Name: e71b0465b9fa13db3922e767c1d8979d221516475670dcd3fa4df1fab30176c6\n",
+      "parent_count": 1,
+      "base_sha": "b0db2db98870acc7917329bc904ee1265e906bf6",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 8,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/vdbe.c",
+          "additions": 2,
+          "deletions": 2,
+          "status": "modified"
+        },
+        {
+          "path": "src/where.c",
+          "additions": 6,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "test/join2.test",
+          "additions": 15,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "9d50c7ebfc02a8f71661797cef69d457bb22493c",
+      "subject": "Fix the expansion of \"TABLE.*\" so that it works the same as PostgreSQL when TABLE is the left operand of a RIGHT JOIN USING. [bugs:/info/2026-10-07T02:56:24Z|Bug 2026-10-07T02:56:24Z]",
+      "body": "FossilOrigin-Name: d232720b7932c1cebe4cf5b1a1e9096889e1807844351390149dfeb2ea7fc304\n",
+      "parent_count": 1,
+      "base_sha": "caa0b5886eaa4455146d34f747b74ae94523cf3a",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 7,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/select.c",
+          "additions": 1,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "test/join.test",
+          "additions": 18,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "c62b4abb9943bd26525819f43a8ab193aade3954",
+      "subject": "Handle temp triggers attached to databases clobbered by sqlite3_deserialize() in the same way as those attached to DETACHed databases.",
+      "body": "FossilOrigin-Name: 84c773fcc2f785346fd12e8a17ac45f9068797d9629ddc367318994b6fed421b\n",
+      "parent_count": 1,
+      "base_sha": "b642a1d56d3e9dea126a05be03813a99589192eb",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 7,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/attach.c",
+          "additions": 19,
+          "deletions": 13,
+          "status": "modified"
+        },
+        {
+          "path": "test/memdb1.test",
+          "additions": 41,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "b642a1d56d3e9dea126a05be03813a99589192eb",
+      "subject": "Ensure that deserializing into a database expires existing prepared statements.",
+      "body": "FossilOrigin-Name: de0361b1caa97d36ea79a5bcb032539ccfb235c03581e0e88c54c03a321d7911\n",
+      "parent_count": 1,
+      "base_sha": "95170adc372e2a3d7ca664c3f3673a5258b0dd78",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 8,
+          "deletions": 9,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/attach.c",
+          "additions": 1,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "test/memdb1.test",
+          "additions": 47,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "95170adc372e2a3d7ca664c3f3673a5258b0dd78",
+      "subject": "Fixes to sqlite3_incomplete() so that it does not appear to presume a trailing newline if there is none. [forum:/info/2026-10-05T16:22:33Z|Forum 2026-10-05T16:22:33Z]",
+      "body": "FossilOrigin-Name: adc1113cfd1d675a44a4ef34d7be3e0cf20129840e542d692fefa249780e23b8\n",
+      "parent_count": 1,
+      "base_sha": "8a91f5484cd1060423bb40998fae7771d5d99657",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 9,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/complete.c",
+          "additions": 3,
+          "deletions": 4,
+          "status": "modified"
+        },
+        {
+          "path": "test/main.test",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "5ee733befea57e6a12943273fe98b4f3d722b8f6",
+      "subject": "Allow windows clients to open and recover a wal mode database even if an old client still has the *-shm file mapped. Forum post [forum:/info/2026-10-05T14:07:31Z | 2026-10-05T14:07:31Z].",
+      "body": "FossilOrigin-Name: 7c103a0b7d509dce58aa87518e13213451e5f70938ff08aa55accd645e3b2ff3\n",
+      "parent_count": 1,
+      "base_sha": "f0c7055db79a8827dfd487acb80713b8af63a99b",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 9,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/os_win.c",
+          "additions": 28,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/test1.c",
+          "additions": 158,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "test/win32shm.test",
+          "additions": 79,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "6e20be1c585fd8dabbaeb01aee75a62b10a55934",
+      "subject": "Ensure that eponymous virtual table objects are not left with dangling schema pointers if the main database is overwritten using sqlite3_serialize().",
+      "body": "FossilOrigin-Name: 18d2646f6fa56244be12122873cd9aa48b2074a22f0be637edfcc9b5de99158b\n",
+      "parent_count": 1,
+      "base_sha": "8532bf12f45ba35d156fcbfc1afa0d808435e63b",
+      "pr_number": null,
+      "expected": "accept",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 10,
+          "deletions": 10,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/attach.c",
+          "additions": 5,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/sqliteInt.h",
+          "additions": 2,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/vtab.c",
+          "additions": 11,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "test/memdb1.test",
+          "additions": 46,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "d76e14d85ee6688763c9e91ab95bfe33652b1684",
+      "subject": "Add comments to help remind developers to keep the table of optimization disable bit values in sync with the CLI and with TH3.",
+      "body": "FossilOrigin-Name: 0e707e7dba7edadda9951549ae3aa34b713a0f2210ccc486e181e833c74e2fa6\n",
+      "parent_count": 1,
+      "base_sha": "265bd6339f92218add70af690529b230cf9b34ec",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 7,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/shell.c.in",
+          "additions": 1,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/sqliteInt.h",
+          "additions": 4,
+          "deletions": 4,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "265bd6339f92218add70af690529b230cf9b34ec",
+      "subject": "The code for sqlite3_analyzer is still in the tree, and you can still build it using \"make sqlite3_analyzer\" but it does not get built as part of \"make tool-zip\" and there is no mention of it in the README files and similar.",
+      "body": "FossilOrigin-Name: 77278079d9dddaff30a1862bf412329e91242a41be7eafc19d3fac8d872adeff\n",
+      "parent_count": 1,
+      "base_sha": "fc96a3c4530bbc66274133d3727a556821dddce6",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "LICENSE.md",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "Makefile.msc",
+          "additions": 2,
+          "deletions": 3,
+          "status": "modified"
+        },
+        {
+          "path": "README.md",
+          "additions": 0,
+          "deletions": 2,
+          "status": "modified"
+        },
+        {
+          "path": "doc/compile-for-unix.md",
+          "additions": 0,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "doc/compile-for-windows.md",
+          "additions": 0,
+          "deletions": 42,
+          "status": "modified"
+        },
+        {
+          "path": "main.mk",
+          "additions": 4,
+          "deletions": 5,
+          "status": "modified"
+        },
+        {
+          "path": "manifest",
+          "additions": 12,
+          "deletions": 14,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "test/analyzer1.test",
+          "additions": 0,
+          "deletions": 55,
+          "status": "modified"
+        },
+        {
+          "path": "tool/mktoolzip.tcl",
+          "additions": 1,
+          "deletions": 2,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "fc96a3c4530bbc66274133d3727a556821dddce6",
+      "subject": "Add the tree-tracker optimization.",
+      "body": "FossilOrigin-Name: e24a8fe9867370bf9766638ff2337ec7a448d5c8995ca6ceed9024e43ccb957d\n",
+      "parent_count": 2,
+      "base_sha": "6e55a61a68cf58544ef294f218be65fb4310c654",
+      "pr_number": null,
+      "expected": "reject",
+      "files": []
+    },
+    {
+      "sha": "6e55a61a68cf58544ef294f218be65fb4310c654",
+      "subject": "Fix some problems with handling corrupt meta-value arrays in vec1.",
+      "body": "FossilOrigin-Name: fa41e6201609f40ce9d6ec28693e4cd143363a78f072476586f6de7fd90aed66\n",
+      "parent_count": 1,
+      "base_sha": "95a64c65286ba8c47e181477f6795c21f72fcb06",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "ext/vec1/test/vec1corrupt.test",
+          "additions": 438,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "ext/vec1/vec1.c",
+          "additions": 110,
+          "deletions": 44,
+          "status": "modified"
+        },
+        {
+          "path": "manifest",
+          "additions": 8,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "95a64c65286ba8c47e181477f6795c21f72fcb06",
+      "subject": "Bump the version number to 3.55 to begin the next development cycle.",
+      "body": "FossilOrigin-Name: 0dc7d0aaf5bacf17095a0ae7d4739458eb2c9cbaf049294589449b8787e6c48c\n",
+      "parent_count": 1,
+      "base_sha": "6932c59ee5c280599dfae9e7b431698a7cab9687",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "VERSION",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "manifest",
+          "additions": 6,
+          "deletions": 9,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.tags",
+          "additions": 0,
+          "deletions": 3,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "039ef9acc90b337e371a6274683e24c15b6d5982",
+      "subject": "Fix a typo in a comment.  No changes to code.",
+      "body": "FossilOrigin-Name: 7b468f6f1d63645c8d8132790831dac6916006f81cf97e99abec711de93feb23\n",
+      "parent_count": 1,
+      "base_sha": "0e62f142b77af9a4c7701559be9bf3612988fa38",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 6,
+          "deletions": 6,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/sqlite.h.in",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "6a385f1d5719cbd3c1cd72f08f108bd3fea714e4",
+      "subject": "Merge the latest trunk fixes into the tree-tracker branch, especially to seal in the cherrypick made necessary by me committing a trunk change to this branch earlier.",
+      "body": "FossilOrigin-Name: b06cac1d938678b873be5a9286079819a1b2f4db22a8e23a1aab8e555728d2ce\n",
+      "parent_count": 2,
+      "base_sha": "2b52aab1c11f2ebdc847ddc23e49309759af778a",
+      "pr_number": null,
+      "expected": "reject",
+      "files": []
+    },
+    {
+      "sha": "8a91f5484cd1060423bb40998fae7771d5d99657",
+      "subject": "Do not run new virtual table tests in memdb1.test for SQLITE_OMIT_VIRTUALTABLE builds.",
+      "body": "FossilOrigin-Name: eced240b2a991ff8255f98d189a6874dda44e3cdb1fcd07e74abddf2a9a71ea4\n",
+      "parent_count": 1,
+      "base_sha": "5ee733befea57e6a12943273fe98b4f3d722b8f6",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 6,
+          "deletions": 6,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "test/memdb1.test",
+          "additions": 40,
+          "deletions": 38,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "fdc06f3643cd450804f12cda637e54754b083da4",
+      "subject": "Fix a build script problem causing generated file sqlite3-all.c to #include \"sqlite-10.c\" instead of \"sqlite-A.c\".",
+      "body": "FossilOrigin-Name: 962b207123fe2bd6d72ad49fb80822b4e4290c1d77ea4ca097ea341202d4cc5f\n",
+      "parent_count": 1,
+      "base_sha": "9cba46343ecf41fed36f4fb8462cfe0351067dd4",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 7,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "tool/split-sqlite3c.tcl",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "sha": "9cba46343ecf41fed36f4fb8462cfe0351067dd4",
+      "subject": "Remove the OP_IfNotOpen opcode.  The OP_IfNullRow opcode is sufficient to get the job done.  This is a follow-up to [e71b0465b9fa13db].",
+      "body": "FossilOrigin-Name: 797081cb705c65a466379e180344d0c9d781f10415c8ed8f72edc6ea065a1a28\n",
+      "parent_count": 1,
+      "base_sha": "bfb858c596f617c7ae74fd74672fae0d101a1588",
+      "pr_number": null,
+      "expected": "reject",
+      "files": [
+        {
+          "path": "manifest",
+          "additions": 8,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "manifest.uuid",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/vdbe.c",
+          "additions": 0,
+          "deletions": 18,
+          "status": "modified"
+        },
+        {
+          "path": "src/where.c",
+          "additions": 8,
+          "deletions": 10,
+          "status": "modified"
+        }
+      ]
+    }
+  ]
+}

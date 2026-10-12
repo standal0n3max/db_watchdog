@@ -1,0 +1,100 @@
+# Ядра СУБД. Watchdog опрашивает только строки с enabled = true.
+# Префиксы DuckDB зафиксированы до прогона выборки из 20 изменений.
+
+[watch]
+schedule = ""
+
+[[cores]]
+id = "duckdb"
+repository = "duckdb/duckdb"
+clone_url = "https://github.com/duckdb/duckdb.git"
+license = "MIT"
+oracle = "unittest"
+enabled = true
+code_prefixes = ["src/", "extension/core_functions/"]
+test_prefixes = [
+    "test/sql/",
+    "test/optimizer/",
+    "test/api/",
+    "test/common/",
+    "test/issues/",
+]
+generated_prefixes = [
+    "extension/tpch/dbgen/answers/",
+    "extension/tpcds/dsdgen/answers/",
+]
+pinned_pr = 26419
+oracle_candidate_prs = [26419, 26057, 26460]
+# Пустые, пока первая успешная сборка не запишет фактические команды.
+build_command = "CMAKE_BUILD_PARALLEL_LEVEL=1 make release DISABLE_SHELL=1 DISABLE_PARQUET=1 CMAKE_VARS_BUILD=-DDUCKDB_RELEASE_LINK_JOBS=1"
+oracle_command = "build/release/test/unittest {test}"
+image = "db-pipeline-duckdb-tools:local"
+branch = "main"
+clone_depth = 200
+samples_dir = ""
+pinned_sha = ""
+sample_candidates = []
+code_exclude = []
+test_suffixes = []
+generated_names = []
+
+[[cores]]
+id = "postgres"
+repository = "postgres/postgres"
+# Зеркало git.postgresql.org. Образцы читаются из pg-gym, не копируются.
+clone_url = "https://git.postgresql.org/git/postgresql.git"
+license = "PostgreSQL License"
+oracle = "pg_regress"
+enabled = true
+# Префиксы не режут diff: и код, и регресс лежат под src/. Разрез — по спискам образца.
+code_prefixes = ["src/", "contrib/"]
+test_prefixes = ["src/test/"]
+generated_prefixes = []
+pinned_pr = 0
+oracle_candidate_prs = []
+build_command = "./configure --without-readline && make -j1"
+oracle_command = "make -C src/test/regress check-tests TESTS={test}"
+image = "db-pipeline-postgres-tools:local"
+branch = "master"
+clone_depth = 1
+samples_dir = "../db_agent_gym/pg-gym/suites/commit/data/samples"
+pinned_sha = ""
+# Три кандидата. Первый закреплён. После третьего отказа оракула поиск останавливается.
+sample_candidates = [
+    "pg_int4_integer_char_overflow",
+    "pg_limit_deparsing_fetch_first",
+    "pg_union_estimate_array_length",
+]
+code_exclude = []
+test_suffixes = []
+generated_names = []
+
+[[cores]]
+id = "sqlite"
+repository = "sqlite/sqlite"
+clone_url = "https://github.com/sqlite/sqlite.git"
+license = "public domain"
+oracle = "testfixture"
+enabled = true
+code_prefixes = ["src/"]
+test_prefixes = ["test/"]
+generated_prefixes = []
+pinned_pr = 0
+oracle_candidate_prs = []
+build_command = "./configure && make testfixture"
+oracle_command = "./testfixture {test}"
+image = "db-pipeline-sqlite-tools:local"
+branch = "master"
+clone_depth = 250
+samples_dir = ""
+# Три коммита с правкой src/ и test/*.test, без амальгамы. Первый закреплён.
+pinned_sha = "bfb858c596f617c7ae74fd74672fae0d101a1588"
+candidate_shas = [
+    "bfb858c596f617c7ae74fd74672fae0d101a1588",
+    "28e05e55f68d84c08e023aca71a5ecbad274be55",
+    "74675a9e87c45888a4ba2ea009a91fbc769539f8",
+]
+sample_candidates = []
+code_exclude = ["sqlite3.c", "sqlite3.h"]
+test_suffixes = [".test"]
+generated_names = ["sqlite3.c", "sqlite3.h"]

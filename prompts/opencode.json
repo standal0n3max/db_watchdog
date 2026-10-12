@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/deepseek/deepseek-v4-flash",
+  "agent": {
+    "build": {
+      "temperature": 0,
+      "steps": 50,
+      "prompt": "{file:PROMPT_PATH}"
+    }
+  }
+}

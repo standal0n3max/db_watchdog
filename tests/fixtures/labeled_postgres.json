@@ -1,0 +1,725 @@
+{
+  "note": "Метки проставлены до прогона фильтра по правилу: непустые solution и test_files, diff не выходит за эти списки и трогает обе стороны.",
+  "changes": [
+    {
+      "name": "pg_aggregates_try_parallelize_array",
+      "sha": "43847dd5e93816ef6e37dfb6c8bb7f98f48ddc01",
+      "subject": "Don't try to parallelize array_agg() on an anonymous record type.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "99c01aadf979eed412a5189c8370ec8fe4784e6f",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/parser/parse_agg.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/aggregates.sql",
+        "src/test/regress/expected/aggregates.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/parser/parse_agg.c",
+          "additions": 10,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/aggregates.out",
+          "additions": 19,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/aggregates.sql",
+          "additions": 7,
+          "deletions": 2,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_alter_table_obtain_required_table",
+      "sha": "bbfcbc4cde4a9fb5b1d91acc3d8efc6f868c2684",
+      "subject": "Obtain required table lock during cross-table constraint updates.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "07402e370e5b07d342a74025407f37a38fe9f064",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/commands/tablecmds.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/alter_table.sql",
+        "src/test/regress/expected/alter_table.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/commands/tablecmds.c",
+          "additions": 11,
+          "deletions": 10,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/alter_table.out",
+          "additions": 7,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/alter_table.sql",
+          "additions": 9,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_collate_icu_utf8_disallow_partitionwise_grouping",
+      "sha": "b6484ca9535e947a068da01015620dfde0b9b488",
+      "subject": "Disallow partitionwise grouping when collations don't match",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "78b1c553bb1c1f334d0b7f3365070ba27a2fcc41",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/optimizer/plan/planner.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/collate.icu.utf8.sql",
+        "src/test/regress/expected/collate.icu.utf8.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/optimizer/plan/planner.c",
+          "additions": 36,
+          "deletions": 8,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/collate.icu.utf8.out",
+          "additions": 90,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/collate.icu.utf8.sql",
+          "additions": 37,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_constraints_dumping_comments_invalid",
+      "sha": "d07bc7c2b3ca5454a036487f67870fa7fb73491c",
+      "subject": "Fix dumping of comments on invalid constraints on domains",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "c0a392c9e0ded5928e2767ae82c56c4760f9d114",
+      "expected": "accept",
+      "solution_paths": [
+        "src/bin/pg_dump/pg_dump.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/constraints.sql",
+        "src/test/regress/expected/constraints.out"
+      ],
+      "files": [
+        {
+          "path": "src/bin/pg_dump/pg_dump.c",
+          "additions": 22,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/constraints.out",
+          "additions": 4,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/constraints.sql",
+          "additions": 6,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_copy2_validation_copy_force",
+      "sha": "c06a4746b1be841dee998a75f9a52b2d06348ca7",
+      "subject": "Fix validation of COPY FORCE_NOT_NULL/FORCE_NULL for the all-column cases",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "a30c1ca21c584cb0917a5e6fbe086164cd8bec6a",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/commands/copy.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/copy2.sql",
+        "src/test/regress/expected/copy2.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/commands/copy.c",
+          "additions": 8,
+          "deletions": 4,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/copy2.out",
+          "additions": 12,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/copy2.sql",
+          "additions": 6,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_create_am_dependency_partitioned_table",
+      "sha": "bb584e831288042d9aee368a1c5daa3dafbb95c3",
+      "subject": "Fix dependency of partitioned table and table AM with CREATE TABLE .. USING",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "e631ed89c2e58464d3969badf2d5d065411b93f0",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/catalog/heap.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/create_am.sql",
+        "src/test/regress/expected/create_am.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/catalog/heap.c",
+          "additions": 4,
+          "deletions": 2,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/create_am.out",
+          "additions": 14,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/create_am.sql",
+          "additions": 10,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_encoding_out_bound_reads",
+      "sha": "849da82105395fa4d06f877db8edc62158167941",
+      "subject": "Fix out-of-bound reads with ascii() for invalid multibyte characters",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "46fa1f6f373865fae7553043790cd17944893ac3",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/utils/adt/oracle_compat.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/encoding.sql",
+        "src/test/regress/expected/encoding.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/utils/adt/oracle_compat.c",
+          "additions": 20,
+          "deletions": 5,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/encoding.out",
+          "additions": 19,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/encoding.sql",
+          "additions": 12,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_foreign_data_dependency_fdw_handler",
+      "sha": "876fa84a275eea578b4a89bb910e184f98d991c2",
+      "subject": "Fix dependency on FDW handler.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "8ee536c89517c0d2fc9df2177eb1e51e61367a68",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/commands/foreigncmds.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/foreign_data.sql",
+        "src/test/regress/expected/foreign_data.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/commands/foreigncmds.c",
+          "additions": 5,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/foreign_data.out",
+          "additions": 7,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/foreign_data.sql",
+          "additions": 5,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_gist_gist_index_only",
+      "sha": "355faed5a24998859a8477cc17e6cd62a0de2214",
+      "subject": "Fix GiST index-only scan column alignment issue.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "fc358af65e2a366012804eecb24a319335b80229",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/executor/nodeIndexonlyscan.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/gist.sql",
+        "src/test/regress/expected/gist.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/executor/nodeIndexonlyscan.c",
+          "additions": 59,
+          "deletions": 54,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/gist.out",
+          "additions": 36,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/gist.sql",
+          "additions": 29,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_hash_index_allow_indexscans_partial",
+      "sha": "e79b2766216ab998080725323bcb4f4e87d639cc",
+      "subject": "Allow indexscans on partial hash indexes with implied quals.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "d7977668eec65363012797302b492adff1578274",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/optimizer/path/indxpath.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/hash_index.sql",
+        "src/test/regress/expected/hash_index.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/optimizer/path/indxpath.c",
+          "additions": 10,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/hash_index.out",
+          "additions": 21,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/hash_index.sql",
+          "additions": 13,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_int4_integer_char_overflow",
+      "sha": "04c25af21c02bf2c5152c3c8ab2ba877c231a598",
+      "subject": "Fix integer to_char() overflow with V format",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "e96b27296bec1c6212874eceb394b4f8b7d06dcc",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/utils/adt/formatting.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/int4.sql",
+        "src/test/regress/expected/int4.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/utils/adt/formatting.c",
+          "additions": 9,
+          "deletions": 7,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/int4.out",
+          "additions": 27,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/int4.sql",
+          "additions": 9,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_limit_deparsing_fetch_first",
+      "sha": "54c05292b1ffc8d7ad9305d224225161e4d3d412",
+      "subject": "Fix deparsing FETCH FIRST <expr> ROWS WITH TIES",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "7318f241d29c0b90e0b8b7e39ebd1914f68fd37a",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/utils/adt/ruleutils.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/limit.sql",
+        "src/test/regress/expected/limit.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/utils/adt/ruleutils.c",
+          "additions": 10,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/limit.out",
+          "additions": 17,
+          "deletions": 3,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/limit.sql",
+          "additions": 4,
+          "deletions": 1,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_money_missing_money_overflow",
+      "sha": "1416f304d2c9514fe65f112514accc9b653902ad",
+      "subject": "Fix missing money overflow checks for INT64_MIN / -1",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "cce758797f75c19080801ddad213f46d7900ec2b",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/utils/adt/cash.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/money.sql",
+        "src/test/regress/expected/money.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/utils/adt/cash.c",
+          "additions": 16,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/money.out",
+          "additions": 8,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/money.sql",
+          "additions": 4,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_psql_psql_expanded_aligned",
+      "sha": "efd885d05b8beded386fbb5a9d737dc9e65289a9",
+      "subject": "psql: Fix expanded aligned output",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "4801610f7c66661f2b8722a2c5561273e210960b",
+      "expected": "accept",
+      "solution_paths": [
+        "src/fe_utils/print.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/psql.sql",
+        "src/test/regress/expected/psql.out"
+      ],
+      "files": [
+        {
+          "path": "src/fe_utils/print.c",
+          "additions": 4,
+          "deletions": 3,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/psql.out",
+          "additions": 26,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/psql.sql",
+          "additions": 11,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_rules_disallow_renaming_rule",
+      "sha": "e99fb3262441b47d88632b2857f03083be67f3e3",
+      "subject": "Disallow renaming a rule to \"_RETURN\".",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "86992769e8fb75910858f64172797f4f011e4f02",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/rewrite/rewriteDefine.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/rules.sql",
+        "src/test/regress/expected/rules.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/rewrite/rewriteDefine.c",
+          "additions": 16,
+          "deletions": 20,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/rules.out",
+          "additions": 2,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/rules.sql",
+          "additions": 1,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_subselect_mislabeling_lateral_references",
+      "sha": "72822a99d44f040e9776c892a8ab877a06c7b7ad",
+      "subject": "Avoid mislabeling of lateral references when pulling up a subquery.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "4527b9e26db8d4987df6f83fc580993d8d103a7e",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/optimizer/prep/prepjointree.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/subselect.sql",
+        "src/test/regress/expected/subselect.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/optimizer/prep/prepjointree.c",
+          "additions": 17,
+          "deletions": 2,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/subselect.out",
+          "additions": 47,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/subselect.sql",
+          "additions": 16,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_triggers_refint_remove_plan",
+      "sha": "66a5146dc73d3ac1befe6ab595815157d5281cb5",
+      "subject": "refint: Remove plan cache.",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "0c9cbbfb5be79d2061d7f897f6c6f4bccb886062",
+      "expected": "accept",
+      "solution_paths": [
+        "contrib/spi/refint.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/triggers.sql",
+        "src/test/regress/expected/triggers.out"
+      ],
+      "files": [
+        {
+          "path": "contrib/spi/refint.c",
+          "additions": 115,
+          "deletions": 237,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/triggers.out",
+          "additions": 18,
+          "deletions": 19,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/triggers.sql",
+          "additions": 5,
+          "deletions": 5,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_unicode_off_by_one",
+      "sha": "0c9cbbfb5be79d2061d7f897f6c6f4bccb886062",
+      "subject": "Fix off-by-one with NFC recomposition for Hangul U+11A7 (TBASE)",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "0626fbfebae51a048b5415710200554eac65ff5e",
+      "expected": "accept",
+      "solution_paths": [
+        "src/common/unicode_norm.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/unicode.sql",
+        "src/test/regress/expected/unicode.out"
+      ],
+      "files": [
+        {
+          "path": "src/common/unicode_norm.c",
+          "additions": 1,
+          "deletions": 1,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/unicode.out",
+          "additions": 78,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/unicode.sql",
+          "additions": 20,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_union_estimate_array_length",
+      "sha": "93ed18720105ebacfd2a2bdeb55bf33feaf2ec80",
+      "subject": "Fix estimate_array_length error with set-operation array coercions",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "c05c3baf169f353914ed34fcabd057be1d25f9b4",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/utils/adt/selfuncs.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/union.sql",
+        "src/test/regress/expected/union.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/utils/adt/selfuncs.c",
+          "additions": 12,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/union.out",
+          "additions": 17,
+          "deletions": 0,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/union.sql",
+          "additions": 4,
+          "deletions": 0,
+          "status": "modified"
+        }
+      ]
+    },
+    {
+      "name": "pg_window_count_s_logic",
+      "sha": "be63b285e5006459c1c66d986dd3da27cbcce746",
+      "subject": "Fix COUNT's logic for window run condition support",
+      "body": "",
+      "parent_count": 1,
+      "base_sha": "71cd10cd249baae25bb420ea4a6d5eae9fe1dd5f",
+      "expected": "accept",
+      "solution_paths": [
+        "src/backend/utils/adt/int8.c"
+      ],
+      "test_paths": [
+        "src/test/regress/sql/window.sql",
+        "src/test/regress/expected/window.out"
+      ],
+      "files": [
+        {
+          "path": "src/backend/utils/adt/int8.c",
+          "additions": 33,
+          "deletions": 3,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/expected/window.out",
+          "additions": 202,
+          "deletions": 2,
+          "status": "modified"
+        },
+        {
+          "path": "src/test/regress/sql/window.sql",
+          "additions": 113,
+          "deletions": 2,
+          "status": "modified"
+        }
+      ]
+    }
+  ]
+}

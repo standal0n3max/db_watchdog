@@ -1,0 +1,87 @@
+diff --git a/src/backend/utils/adt/formatting.c b/src/backend/utils/adt/formatting.c
+index d9183509aa0..a101771d40a 100644
+--- a/src/backend/utils/adt/formatting.c
++++ b/src/backend/utils/adt/formatting.c
+@@ -6717,15 +6717,17 @@ int4_to_char(PG_FUNCTION_ARGS)
+ 
+ 		if (IS_MULTI(&Num))
+ 		{
+-			orgnum = DatumGetCString(DirectFunctionCall1(int4out,
+-														 Int32GetDatum(value * ((int32) pow((double) 10, (double) Num.multi)))));
++			double		multi = pow((double) 10, (double) Num.multi);
++
++			value = DatumGetInt32(DirectFunctionCall2(int4mul,
++													  Int32GetDatum(value),
++													  DirectFunctionCall1(dtoi4,
++																		  Float8GetDatum(multi))));
+ 			Num.pre += Num.multi;
+ 		}
+-		else
+-		{
+-			orgnum = DatumGetCString(DirectFunctionCall1(int4out,
+-														 Int32GetDatum(value)));
+-		}
++
++		orgnum = DatumGetCString(DirectFunctionCall1(int4out,
++													 Int32GetDatum(value)));
+ 
+ 		if (*orgnum == '-')
+ 		{
+diff --git a/src/test/regress/expected/int4.out b/src/test/regress/expected/int4.out
+index b1a15888ef8..fca591fad84 100644
+--- a/src/test/regress/expected/int4.out
++++ b/src/test/regress/expected/int4.out
+@@ -370,6 +370,33 @@ SELECT (-2147483648)::int4 % (-1)::int2;
+         0
+ (1 row)
+ 
++-- check overflow of to_char() with V format
++SELECT to_char(2, '9V999999999'); -- 10^9
++   to_char   
++-------------
++  2000000000
++(1 row)
++
++SELECT to_char(3, '9V999999999'); -- 10^9
++ERROR:  integer out of range
++SELECT to_char(214748364, '999999999V9');
++   to_char   
++-------------
++  2147483640
++(1 row)
++
++SELECT to_char(2147483647, '9V9');
++ERROR:  integer out of range
++SELECT to_char(-2, '9V999999999'); -- 10^9
++   to_char   
++-------------
++ -2000000000
++(1 row)
++
++SELECT to_char((-2147483648)::int4, '9V9');
++ERROR:  integer out of range
++SELECT to_char(1, '9V9999999999'); -- 10^10
++ERROR:  integer out of range
+ -- check rounding when casting from float
+ SELECT x, x::int4 AS int4_value
+ FROM (VALUES (-2.5::float8),
+diff --git a/src/test/regress/sql/int4.sql b/src/test/regress/sql/int4.sql
+index e9d89e8111f..d27f5500e01 100644
+--- a/src/test/regress/sql/int4.sql
++++ b/src/test/regress/sql/int4.sql
+@@ -126,6 +126,15 @@ SELECT (-2147483648)::int4 * (-1)::int2;
+ SELECT (-2147483648)::int4 / (-1)::int2;
+ SELECT (-2147483648)::int4 % (-1)::int2;
+ 
++-- check overflow of to_char() with V format
++SELECT to_char(2, '9V999999999'); -- 10^9
++SELECT to_char(3, '9V999999999'); -- 10^9
++SELECT to_char(214748364, '999999999V9');
++SELECT to_char(2147483647, '9V9');
++SELECT to_char(-2, '9V999999999'); -- 10^9
++SELECT to_char((-2147483648)::int4, '9V9');
++SELECT to_char(1, '9V9999999999'); -- 10^10
++
+ -- check rounding when casting from float
+ SELECT x, x::int4 AS int4_value
+ FROM (VALUES (-2.5::float8),

@@ -1,0 +1,1 @@
+You are fixing one bug in the DuckDB core. The repository is already checked out at the base commit, and the failing tests are already applied. Read the problem statement and the test patch. Change only core code. Do not edit files under test/. Do not print or request API keys. Stop when the code change is in the working tree.

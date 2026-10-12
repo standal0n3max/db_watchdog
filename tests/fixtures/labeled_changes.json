@@ -1,0 +1,1175 @@
+{
+  "description": "Ручная разметка 20 реальных изменений duckdb/duckdb от 2026-10-10. Метки expected не менять после просмотра решения фильтра.",
+  "changes": [
+    {
+      "pr_number": 26419,
+      "sha": "fea4498ea5e7ba7687aab2619417eed9139960eb",
+      "base_sha": "",
+      "subject": "Fix #26401: EXISTS returns false when its subquery filters on an aggregate over an empty table",
+      "body": "Fixes #26401.\r\n\r\n## Problem\r\n\r\n`EXISTS` returns false (and `NOT EXISTS` returns rows) when its subquery filters on an aggregate over an empty table:\r\n\r\n```sql\r\nCREATE TABLE t (a INT);\r\nINSERT INTO t VALUES (1), (2);\r\nCREATE TABLE e (a INT); -- empty\r\nSELECT EXISTS (SELECT 1 FROM t WHERE NOT EXISTS (SELECT 1 FROM e));\r\n-- expected true, got false\r\n```\r\n\r\n- Uncorrelated `EXISTS` is planned as `LIMIT 1`, then `COUNT(*)`, then `count == 1` (see `plan_subquery.cpp`).\r\n- Statistics propagate bottom-up",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление с issue, правка src/ и test/sql",
+      "files": [
+        {
+          "path": "src/optimizer/statistics/operator/propagate_aggregate.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/subquery/exists/test_issue_26401.test",
+          "status": "added",
+          "additions": 40,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26460,
+      "sha": "3b3312a963c693efe6bcaef4ee4484b4adc17200",
+      "base_sha": "",
+      "subject": "Fix missing bitmap update for fixed size buffers",
+      "body": "Resolves https://github.com/duckdblabs/duckdb-internal/issues/11171.\r\n\r\nWe now mark a fixed size buffer as modified when updating the bitmask. We've also renamed the `GetOffset` function as the naming was slightly misleading w.r.t the function actually modifying internal state. Finally, to mirror `AllocateSegment` we now also introduce a `FreeSegment` function so buffer properties are modified within buffer functions.\r\n\r\nTo verify this behavior a test is added which fills the fixed size buffers,",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление индекса, правка src/ и test/sql",
+      "files": [
+        {
+          "path": "src/execution/index/fixed_size_allocator.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 15
+        },
+        {
+          "path": "src/execution/index/fixed_size_buffer.cpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 7
+        },
+        {
+          "path": "src/include/duckdb/execution/index/fixed_size_buffer.hpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/index/art/storage/test_art_allocator_bitmap_checkpoint.test",
+          "status": "added",
+          "additions": 80,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26508,
+      "sha": "a770db1197ec428f11d7b9529c66389b4e40c87d",
+      "base_sha": "",
+      "subject": "Preserve casts in list comprehension rewrites",
+      "body": "Nested list lambdas can return an incorrect value when the list-comprehension rewrite discards casts: converting `[2]` through `INTEGER → BOOLEAN → INTEGER` currently returns `[2]` instead of `[1]`. Filter cast chains and struct cast chains can likewise change results; `TRY_CAST` can become a throwing cast. Fixes #26507.\n\nThe matcher currently unwraps arbitrary casts to recognize the parser's `filter`/`result` struct pattern, but the replacement does not recreate them. Restrict matching to direc",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление оптимизатора, правка src/ и test/sql",
+      "files": [
+        {
+          "path": "src/optimizer/rule/list_comprehension_rewrite.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 14
+        },
+        {
+          "path": "test/sql/optimizer/expression/list_comprehension_casts.test",
+          "status": "added",
+          "additions": 102,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26057,
+      "sha": "5d75ffff7bd0568b53c05aec1b9525bae9812212",
+      "base_sha": "",
+      "subject": "Fix FILL extrapolation for decreasing integer runs (#26042)",
+      "body": "Fixes #26042\n\n## Problem\nFILL extrapolates incorrectly for the integer paths when the anchor values are in a *decreasing* run (lo > hi). The exchanged-frame slope was computed as -d, but by the affine identity\n\n    lo + d*(hi - lo) == hi + (1 - d)*(lo - hi)\n\nthe correct slope is 1 - d.\n\nRepro from the issue:\n    CREATE TABLE t(x BIGINT PRIMARY KEY, y BIGINT);\n    INSERT INTO t VALUES (1, 19), (2, 5), (3, NULL);\n    SELECT x, FILL(y) OVER (ORDER BY x) AS fill_y, FILL(-y) OVER (ORDER BY x) AS fill",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление FILL с issue, правка src/ и test/sql",
+      "files": [
+        {
+          "path": "src/function/window/window_value_function.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/window/test_fill_orderby.test",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26395,
+      "sha": "5a06879d94422fd04dd9173300445491f12f9d1f",
+      "base_sha": "",
+      "subject": "Fix window filter pushdown for decreasing partition expressions",
+      "body": " This fixes a correctness regression introduced by 7bcaeeb2da(#26107, \"Window Monotonic Pushdown\").\r\n\r\nWindow filter pushdown can return incorrect results for decreasing partition expressions. For example, `PARTITION BY -x` with an outer `WHERE x > 1` generates the invalid auxiliary filter `-x > -1`, dropping matching rows.\r\n\r\nRestrict auxiliary filter generation to increasing functions. Simply  reversing the inequality is insufficient for floating-point NaN values.",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление window pushdown, правка src/ и test/optimizer",
+      "files": [
+        {
+          "path": "src/optimizer/pushdown/pushdown_window.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/optimizer/pushdown/pushdown_window_decreasing_partition.test",
+          "status": "added",
+          "additions": 131,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 25942,
+      "sha": "fc2df0ff53e41a56a7327c130cd20fedc6e39f94",
+      "base_sha": "",
+      "subject": "Fix issue #25886: dangling root pointer in StatisticsPropagator after root replacement",
+      "body": "### Problem & Root Cause\n\nPlanning an `ORDER BY ... LIMIT` query over an input where no rows pass the filter (or an empty table) can crash with a segfault or `INTERNAL Error: Attempted to dereference unique_ptr that is NULL` (#25886).\n\nDuring statistics propagation, when a filter evaluates to empty, `PropagateStatistics(LogicalLimit&)` realizes the child cardinality is 0 and elides the `LogicalLimit` by moving its child into `node_ptr`. When this happens at the top of the plan, the root `Logical",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление statistics propagator с issue, правка src/ и test/optimizer",
+      "files": [
+        {
+          "path": "src/include/duckdb/optimizer/statistics_propagator.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/optimizer/filter_statistics.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/optimizer.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/optimizer/statistics_propagator.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/optimizer/statistics/statistics_root_replaced.test",
+          "status": "added",
+          "additions": 24,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 25530,
+      "sha": "625f75fce87c7b49c0bef7c331bd89a32d1c0d38",
+      "base_sha": "",
+      "subject": "fix(parser): Preserve CTE metadata when copying",
+      "body": "## Summary\r\n\r\n  - Reuse `CommonTableExpressionInfo::Copy()` in both CTE container copy paths instead of maintaining duplicate field-copy logic.\r\n  - Preserve `is_trigger_generated` when copying CTEs and mark `Copy()` as `const`.\r\n  - Add focused tests covering property preservation, deep-copy isolation, and both CTE copy entry points.\r\n\r\n  ## Testing\r\n\r\n  - `cmake --build build/reldebug --target unittest -j 9`\r\n  - `build/reldebug/test/unittest \"[api][parser]\"` — 3 test cases and 30 assertions p",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление копирования CTE, правка src/ и C++-теста test/api",
+      "files": [
+        {
+          "path": "src/include/duckdb/parser/common_table_expression_info.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/common_table_expression_info.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/query_node.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 30
+        },
+        {
+          "path": "test/api/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/test_query_node_copy.cpp",
+          "status": "added",
+          "additions": 79,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26148,
+      "sha": "ae3549331ba17bd94629dfa88341d1e8314ef011",
+      "base_sha": "",
+      "subject": "Preserve a remote URL's query string in FileSystem::JoinPath",
+      "body": "### Problem\n\n`FileSystem::JoinPath(a, b)` appends `b` to `a` without accounting for a query string on `a`. When `a` is a remote URL carrying a `?query` suffix — an object version id, `requester_pays`, an SSE-C key, etc. — the appended segment lands *after* the query, burying it mid-path and corrupting both the query and the object path.\n\nThis surfaces in `COPY ... TO` a **partitioned or multi-file** remote destination whose path carries query parameters. The writer builds each output path by app",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление FileSystem, правка src/ и C++-теста test/common",
+      "files": [
+        {
+          "path": "src/common/file_system.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "test/common/test_file_system.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26790,
+      "sha": "2666f35707b758621f7b4e6e9694be35b41c10b5",
+      "base_sha": "",
+      "subject": "Fix yearweek filters for dates before ISO year 1",
+      "body": "Fixes #26789\n\n## Summary\n\n`yearweek` filters can return the wrong rows when a column range includes ISO year 0 or a negative ISO year. On 800 dates starting at `DATE '-00043-01-01'`, `yearweek(d) >= -4310` returns 800 instead of 506, and `yearweek(d) < -4310` returns 0 instead of 294. A timestamp range that stays inside one negative ISO year is inverted the other way: `yearweek(ts) >= -4310` returns 0 instead of 69. `date_part('yearweek', ...)`, `extract(yearweek FROM ...)`, and a prepared state",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление yearweek, код в extension/core_functions и тест test/sql",
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/date/date_part.cpp",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 3
+        },
+        {
+          "path": "extension/icu/icu-datepart.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/optimizer/yearweek_negative_iso_year.test",
+          "status": "added",
+          "additions": 113,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 25763,
+      "sha": "2be21ff1d436a20bd1779f82618f6aadf22a943c",
+      "base_sha": "",
+      "subject": "Fix positional column references in macro arguments",
+      "body": "Passing positional column references (#1, #2) to a macro can bind them by the input column names instead of their argument positions. If those names match the macro parameters in a different order, the query silently returns the wrong result. If the names do not match, the call can fail with a Binder Error.\r\nSkip inferred aliases for positional references inside function expressions, matching the existing handling of ordinary column references from #9990. Explicit argument names and output alias",
+      "parent_count": 1,
+      "expected": "accept",
+      "human_reason": "исправление макроса, правка src/ и test/sql",
+      "files": [
+        {
+          "path": "src/planner/column_qualifier.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/catalog/function/test_macro_positional_reference.test",
+          "status": "added",
+          "additions": 73,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26352,
+      "sha": "6b9593714ee62bb2f66b7e5a2560aba92af518c3",
+      "base_sha": "",
+      "subject": "Track release line alpha version (branch main)",
+      "body": "### Context\r\n\r\nDownloading a CLI using a tarball (see [2.0-dev](https://duckdb.org/install/preview#v20-dev-packages)) could mean the CLI has [no](https://github.com/duckdblabs/duckdb-internal/issues/10528) extensions available.\r\n\r\nThere is a gap between creating the github artifact file and uploading the extensions to the S3 bucket. Or worse (one or more CI jobs failed), no extensions are ever uploaded for that platform.\r\n\r\nWe could fix this problem by [redirecting](https://github.com/duckdb/art",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "только workflow CI",
+      "files": [
+        {
+          "path": ".github/workflows/Main.yml",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 26160,
+      "sha": "cf0b14db3edaf39f6051ba2790df66d1680f687e",
+      "base_sha": "",
+      "subject": "Rename ART NodePtr variables to distinguish them from nodes",
+      "body": "Just a rename PR, no functionality change. https://github.com/duckdblabs/duckdb-internal/issues/10982\r\n\r\nPreviously we renamed the type of Node to NodePtr, to make clear it is just a pointer value type inherited from IndexPointer. Now rename variables accordingly, e.g. a `node` variable name in a lot of places is really denoting a `node_ptr`. \r\n\r\nJustification for both of these renames is that with the buffer management feature, it is easier to reason about the code by making explicit what is an",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "переименование переменных без тестов",
+      "files": [
+        {
+          "path": "src/execution/index/art/art.cpp",
+          "status": "modified",
+          "additions": 89,
+          "deletions": 88
+        },
+        {
+          "path": "src/execution/index/art/art_builder.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 11
+        },
+        {
+          "path": "src/execution/index/art/art_index.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/execution/index/art/art_merger.cpp",
+          "status": "modified",
+          "additions": 89,
+          "deletions": 89
+        },
+        {
+          "path": "src/execution/index/art/base_leaf.cpp",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 39
+        },
+        {
+          "path": "src/execution/index/art/base_node.cpp",
+          "status": "modified",
+          "additions": 42,
+          "deletions": 42
+        },
+        {
+          "path": "src/execution/index/art/const_prefix_handle.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 16
+        },
+        {
+          "path": "src/execution/index/art/iterator.cpp",
+          "status": "modified",
+          "additions": 47,
+          "deletions": 46
+        },
+        {
+          "path": "src/execution/index/art/leaf.cpp",
+          "status": "modified",
+          "additions": 80,
+          "deletions": 80
+        },
+        {
+          "path": "src/execution/index/art/node.cpp",
+          "status": "modified",
+          "additions": 88,
+          "deletions": 88
+        },
+        {
+          "path": "src/execution/index/art/node256.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 12
+        },
+        {
+          "path": "src/execution/index/art/node256_leaf.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 15
+        },
+        {
+          "path": "src/execution/index/art/node48.cpp",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 20
+        },
+        {
+          "path": "src/execution/index/art/node_handle.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "src/execution/index/art/prefix.cpp",
+          "status": "modified",
+          "additions": 84,
+          "deletions": 82
+        },
+        {
+          "path": "src/execution/index/art/prefix_handle.cpp",
+          "status": "modified",
+          "additions": 61,
+          "deletions": 61
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art_builder.hpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art_merger.hpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 11
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art_operator.hpp",
+          "status": "modified",
+          "additions": 104,
+          "deletions": 104
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art_scanner.hpp",
+          "status": "modified",
+          "additions": 43,
+          "deletions": 43
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/base_leaf.hpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 12
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/base_node.hpp",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 16
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/const_prefix_handle.hpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 12
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/iterator.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/leaf.hpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 11
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/node.hpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 16
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/node256.hpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 10
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/node256_leaf.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/node48.hpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 11
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/node_handle.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/prefix.hpp",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 18
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/prefix_handle.hpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 11
+        }
+      ]
+    },
+    {
+      "pr_number": 26092,
+      "sha": "0d3cd0e22edae0b4e5f999d7bd6406d644d814d6",
+      "base_sha": "",
+      "subject": "Update DuckLake on main",
+      "body": "Bumps the DuckLake pin on main to current DuckLake main (`7963da42`, 2026-09-22), mirroring what commit 007bbf3d (\"Update DuckLake in 2.0\") did for the v2.0 branch on 2026-09-16.\r\n\r\nDuckdb-benchmark is currently broken because DuckLake is targeting pre-1.1 metadata\r\n",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "обновление расширения DuckLake, только патчи .github",
+      "files": [
+        {
+          "path": ".github/config/extensions/ducklake.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0001-at-clause-unit-identifier.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 36
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0001-copy-to-file-table-index.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 26
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0002-dynamic_filter_pushdown_info.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 38
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0002-table-function-bind-identifiers.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 287
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0003-extra-columns-refactor.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 307
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0004-disable-bucket-partitioning-on-musl.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 12
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0004-query-result-accessors.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 49
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0005-get-default-schema-identifier.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 158
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0006-setting-name-identifier.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 33
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0007-string-stats-exactness.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 32
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0007-value-optional-trycast.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 109
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0008-identifier-quoting-in-error-messages.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 77
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0009-function-set-shared-ptr.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 26
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0009-get-default-schema-optional.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 19
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0010-merge-into-action-pipelines.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 687
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0011-table-catalog-entry-columns.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 52
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0012-columnref-expression-include.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 12
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0012-literal-constant-expression.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 211
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0012-skip-merge-adjacent-max-files-on-musl.patch",
+          "status": "removed",
+          "additions": 0,
+          "deletions": 13
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0013-skip-slow-musl-tests.patch",
+          "status": "added",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0014-skip-schema-cache-tests-on-musl.patch",
+          "status": "added",
+          "additions": 26,
+          "deletions": 0
+        }
+      ]
+    },
+    {
+      "pr_number": 20237,
+      "sha": "2370bf6fd7418606943ea54a3a52aa0019f10aef",
+      "base_sha": "",
+      "subject": "Big-endian patches (FSST, arrow, types, md5)",
+      "body": "The PR fixes big-endian related issues with these:\r\n- FSST compression (\"gracefully\" merges the latest of https://github.com/cwida/fsst to pick up [BE support](https://github.com/cwida/fsst/pull/36));\r\n- arrow conversion;\r\n- GEOMETRY and HASH types;\r\n- md5 functions.",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "правка src и third_party без тестов",
+      "files": [
+        {
+          "path": "src/common/arrow/schema_metadata.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/common/types/geometry.cpp",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 28
+        },
+        {
+          "path": "src/common/types/hash.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/scalar/string/md5.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/table/arrow_conversion.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/common/bswap.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/common/helper.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "third_party/fsst/libfsst.cpp",
+          "status": "modified",
+          "additions": 33,
+          "deletions": 23
+        },
+        {
+          "path": "third_party/fsst/libfsst.hpp",
+          "status": "modified",
+          "additions": 47,
+          "deletions": 19
+        }
+      ]
+    },
+    {
+      "pr_number": 26006,
+      "sha": "688937993ace879e716e1e4ce01e2a979dfd190b",
+      "base_sha": "",
+      "subject": "Parquet: avoid a branch in the dictionary filter loop",
+      "body": "The dictionary filter loop in `DictionaryDecoder::Filter` branches per row on\n`filter_result[offset]`. For a selective filter that result is essentially random, so the\nbranch mispredicts.\n\nThis writes the row index unconditionally and advances `approved_tuple_count` by the filter\nresult; the slot is overwritten by the next approved row, so only the entries up to\n`approved_tuple_count` are used.\n\nBenchmark query:\n\n```sql\nSELECT count(*) FROM lineitem\nWHERE l_shipdate >= DATE '1994-01-01' AND l_sh",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "только extension/parquet, без теста",
+      "files": [
+        {
+          "path": "extension/parquet/decoder/dictionary_decoder.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 5
+        }
+      ]
+    },
+    {
+      "pr_number": 26103,
+      "sha": "45ca8d697f79b3e4f5272a5ad750f3730533e84f",
+      "base_sha": "",
+      "subject": "Add an optional scale factor to tpch_queries() / tpcds_queries() and the tpch()/tpcds() pragmas",
+      "body": "`tpch_queries()`, `tpcds_queries()` and the `tpch()` / `tpcds()` pragmas take an optional scale factor, positionally or as `sf=...`:\n\n```sql\nSELECT * FROM tpch_queries(sf=100);\nSELECT * FROM tpcds_queries(10);\nPRAGMA tpch(11, sf=100);\nPRAGMA tpcds(9, sf=10);\n```\n\nThe returned queries carry the substitution parameters the official generators produce for that scale factor. Without a scale factor the stored queries are returned unchanged, byte for byte.\n\n### What depends on the scale factor\n\nChecke",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "массовая перезапись сгенерированных csv ответов TPC-H",
+      "files": [
+        {
+          "path": "benchmark/large/tpch-sf100/q11.benchmark",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 3
+        },
+        {
+          "path": "benchmark/large/tpch-sf100/q11.sql",
+          "status": "added",
+          "additions": 29,
+          "deletions": 0
+        },
+        {
+          "path": "benchmark/tpch/sf1/q11.benchmark",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 4
+        },
+        {
+          "path": "benchmark/tpch/sf10/q11.benchmark",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 3
+        },
+        {
+          "path": "benchmark/tpch/sf10/q11.sql",
+          "status": "added",
+          "additions": 29,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpcds/dsdgen/answers/sf0.01/09.csv",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/tpcds/dsdgen/dsdgen.cpp",
+          "status": "modified",
+          "additions": 46,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpcds/dsdgen/include/dsdgen.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpcds/dsdgen/include/tpcds_constants.hpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 14
+        },
+        {
+          "path": "extension/tpcds/include/tpcds_extension.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpcds/tpcds_extension.cpp",
+          "status": "modified",
+          "additions": 63,
+          "deletions": 6
+        },
+        {
+          "path": "extension/tpch/dbgen/answers/sf0.01/q11.csv",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 358
+        },
+        {
+          "path": "extension/tpch/dbgen/answers/sf0.1/q11.csv",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2519
+        },
+        {
+          "path": "extension/tpch/dbgen/answers/sf10/q11.csv",
+          "status": "modified",
+          "additions": 8685,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpch/dbgen/answers/sf100/q11.csv",
+          "status": "modified",
+          "additions": 92698,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpch/dbgen/dbgen.cpp",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpch/dbgen/include/dbgen/dbgen.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpch/dbgen/include/tpch_constants.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/tpch/include/tpch_extension.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/tpch/tpch_extension.cpp",
+          "status": "modified",
+          "additions": 63,
+          "deletions": 6
+        },
+        {
+          "path": "test/optimizer/join_parquet_with_base.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/constraints/foreignkey/test_fk_tpch.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/copy/csv/tpch_csv_sf01.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/copy/csv/tpch_parallel_copy.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/copy/parquet/writer/parquet_write_tpch_nested.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/detailed_profiler/detailed_tpch_parallel_sf01.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/detailed_profiler/detailed_tpch_sf001.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/json/test_json_copy_tpch.test_slow",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "test/sql/storage/storage_tpch.test_slow",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "test/sql/storage/types/variant/tpcds_sf001.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/storage/types/variant/tpch_sf001.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/tpcds/tpcds_queries_sf.test",
+          "status": "added",
+          "additions": 101,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/tpcds/tpcds_sf001.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/tpcds/tpcds_sf001_keys.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/tpch/tpch_parallel_sf01.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/tpch/tpch_queries_sf.test",
+          "status": "added",
+          "additions": 94,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/tpch/tpch_sf001.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/tpch/tpch_sf001_struct.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/tpch/tpch_sf01.test_slow",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        }
+      ]
+    },
+    {
+      "pr_number": 23077,
+      "sha": "pr-23077",
+      "base_sha": "",
+      "subject": "docs: create `AGENTS.md` and link from `CLAUDE.md`",
+      "body": "",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "только документация AGENTS.md и CLAUDE.md",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "status": "added",
+          "additions": 350,
+          "deletions": 0
+        },
+        {
+          "path": "CLAUDE.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 350
+        }
+      ]
+    },
+    {
+      "pr_number": 21838,
+      "sha": "pr-21838",
+      "base_sha": "",
+      "subject": "Update documentation links from docs/stable to docs/current",
+      "body": "",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "замена ссылок в документации, исходники и тесты тронуты на одну строку",
+      "files": [
+        {
+          "path": "README.md",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "SECURITY.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "data/storage/README.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/delta/README.md",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/common/error_data.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/exception.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/local_file_system.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/multi_file/multi_file_reader.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/table/system/logging_utils.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/main/extension/extension_install.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/binder/expression/bind_function_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/query_node/bind_recursive_cte_node.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/api/adbc/test_adbc.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/extension/install_extension.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/extension/install_extension_httpfs.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/logging/warnings_as_errors.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ]
+    },
+    {
+      "pr_number": 25645,
+      "sha": "668cc1e283f06c5346750481340722e1225945fc",
+      "base_sha": "",
+      "subject": "Format the main CMakeLists.txt through the standard channel",
+      "body": "",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "форматирование CMakeLists и правка scripts/format.py",
+      "files": [
+        {
+          "path": "CMakeLists.txt",
+          "status": "modified",
+          "additions": 470,
+          "deletions": 284
+        },
+        {
+          "path": "scripts/format.py",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        }
+      ]
+    },
+    {
+      "pr_number": 20786,
+      "sha": "369c0d390dd374c939e12bacbe089cc413be0280",
+      "base_sha": "",
+      "subject": "Revert \"[chore] Skip building spatial, needs a patch, needs to be rev…",
+      "body": "This reverts commit dabd0d730b01efcc95c72b667a6a56407d11c035.\n",
+      "parent_count": 1,
+      "expected": "reject",
+      "human_reason": "revert коммита про сборку расширения",
+      "files": [
+        {
+          "path": ".github/config/extensions/spatial.cmake",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        }
+      ]
+    }
+  ]
+}
