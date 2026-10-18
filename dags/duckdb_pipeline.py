@@ -26,7 +26,7 @@ from db_pipeline.stages import (
     tags=["duckdb"],
 )
 def duckdb_pipeline() -> None:
-    """Сбор одного экземпляра DuckDB: watchdog, фильтр, оракул, запись."""
+    """Закреплённый проход DuckDB по PR из repos.toml. Обход истории — команда --harvest."""
 
     @task
     def watchRepos() -> StageResult:

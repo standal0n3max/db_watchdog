@@ -50,7 +50,8 @@ clone_url = "https://git.postgresql.org/git/postgresql.git"
 license = "PostgreSQL License"
 oracle = "pg_regress"
 enabled = true
-# Префиксы не режут diff: и код, и регресс лежат под src/. Разрез — по спискам образца.
+# Префиксы не режут diff: и код, и регресс лежат под src/.
+# Закреплённый запуск режет по спискам образца. --harvest режет по src/test/regress/.
 code_prefixes = ["src/", "contrib/"]
 test_prefixes = ["src/test/"]
 generated_prefixes = []

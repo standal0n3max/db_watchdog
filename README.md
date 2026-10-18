@@ -10,7 +10,7 @@
 
 Сборщик и стенд оценки агентов остаются разными компонентами. Образ, в котором сборщик проверяет коммит, и образ, в котором стенд прогоняет агента, живут отдельно. У pg-gym свой образ PostgreSQL уже есть, и прогон агента на стенде идёт в нём.
 
-План DuckDB: [plans/2026-10-10_mvp_пайплайн_duckdb.md](../plans/2026-10-10_mvp_пайплайн_duckdb.md). План PostgreSQL и SQLite: [plans/2026-10-10_postgres_sqlite_пайплайн.md](../plans/2026-10-10_postgres_sqlite_пайплайн.md).
+План DuckDB: [plans/2026-10-10_mvp_пайплайн_duckdb.md](../plans/2026-10-10_mvp_пайплайн_duckdb.md). План PostgreSQL и SQLite: [plans/2026-10-10_postgres_sqlite_пайплайн.md](../plans/2026-10-10_postgres_sqlite_пайплайн.md). Сбор новых SQL-коммитов: [plans/2026-10-18_сбор_новых_sql_коммитов.md](../plans/2026-10-18_сбор_новых_sql_коммитов.md).
 
 ## Что делает цепочка
 
@@ -28,12 +28,14 @@ flowchart LR
 
 
 
-1. `watchRepos` делает `git fetch` только включённых строк `repos.toml` и берёт закреплённый PR. Для первого прохода это PR 26419.
-2. `fetchChange` достаёт родительский sha, diff, сообщение, номер PR и постановку. Источник постановки пишется в `statement_source`: `issue`, `pr` или `commit_message`. Текст issue читается с GitHub, если ссылка есть. Документация в условие не подмешивается с текущего HEAD.
-3. `filterCandidate` отсекает merge-сообщение, revert, только документацию, форматирование и переименование без тестов, массовое обновление сгенерированных ответов TPC-H/TPC-DS и изменение без одновременной правки кода и тестов. Повторный sha не получает вторую запись.
-4. `compileTask` режет diff коммита между родителем и самим коммитом. У DuckDB и SQLite рез идёт по префиксам из `repos.toml`. У PostgreSQL рез идёт по спискам `test_files` и `solution` образца: и код, и регресс лежат под `src/`. Тестовые пути попадают в `test_patch`, пути кода — в скрытый `gold_patch`.
+Закреплённый запуск берёт один заранее записанный кандидат. `--harvest` идёт по истории и останавливается, когда оракул принял `--accept` задач.
+
+1. `watchRepos` в закреплённом запуске делает `git fetch` включённой строки `repos.toml` и берёт кандидата из конфига: PR 26419 у DuckDB, следующий образец pg-gym у PostgreSQL, закреплённый sha у SQLite. `--harvest` этот шаг заменяет обходом `git log` первой родительской линии. У DuckDB в окно попадают коммиты `origin/main`, в теме которых есть `(#номер)`. У PostgreSQL и SQLite — коммиты `master`. История добирается `git fetch --deepen`, пока не набрано `--scan` коммитов, которых ещё нет в журнале. Курсор лежит в `data/cursors/<core>.json`.
+2. `fetchChange` достаёт родительский sha, diff, сообщение, номер PR и постановку. Источник постановки пишется в `statement_source`: `issue`, `pr` или `commit_message`. Текст issue читается с GitHub, если ссылка есть. Документация в условие не подмешивается с текущего HEAD. В `--harvest` постановка PostgreSQL и SQLite — сообщение коммита. У DuckDB по-прежнему issue, описание PR или сообщение коммита.
+3. `filterCandidate` отсекает merge-сообщение, revert, только документацию, форматирование и переименование без тестов, массовое обновление сгенерированных ответов TPC-H/TPC-DS и изменение без одновременной правки кода и тестов. Повторный sha не получает вторую запись. В `--harvest` пара сужается до SQL-префиксов из `repos.toml`. Коммит PostgreSQL без изменённого `expected/*.out` получает `no_oracle_test` и не собирается.
+4. `compileTask` режет diff коммита между родителем и самим коммитом. У DuckDB и SQLite рез идёт по префиксам из `repos.toml`: тесты попадают в `test_patch`, код — в скрытый `gold_patch`. В закреплённом запуске PostgreSQL рез идёт по спискам `test_files` и `solution` образца, потому что и код, и регресс лежат под `src/`. В `--harvest` всё под `src/test/regress/` попадает в `test_patch`, остальной diff коммита — в `gold_patch`. Имя теста берётся из `expected/<имя>.out`.
 5. `verifyEnvironment` поднимает контейнер из шаблона своего ядра: `docker/duckdb.Dockerfile`, `docker/postgres.Dockerfile` или `docker/sqlite.Dockerfile`. В образе только инструменты сборки. Исходники конкретного `base_sha` монтируются снаружи. Экземпляр остаётся, если тесты из задачи падают до эталона и проходят после него.
-6. `runOpenCode` запускает OpenCode процессом рядом с контейнером. В образ ключ не кладётся. Температура 0, лимит шагов 50, таймаут 1800 с. Пустой diff записывается как pass ложь. Если оракул экземпляр не принял, эта стадия пропускается.
+6. `runOpenCode` в закреплённом запуске стартует OpenCode процессом рядом с контейнером. В образ ключ не кладётся. Температура 0, лимит шагов 50, таймаут 1800 с. Пустой diff записывается как pass ложь. Если оракул экземпляр не принял, эта стадия пропускается. `--harvest` эту стадию не вызывает: экземпляр для датасета готов после оракула.
 7. `writeRecord` пишет JSON задачи и JSON запуска отдельно. Повторный прогон того же sha не создаёт второй файл задачи.
 
 Если фильтр или оракул отвергают изменение, цепочка всё равно доходит до `writeRecord`. Причина и лог лежат в журнале. Необработанное исключение посередине таким завершением не считается.
@@ -65,11 +67,13 @@ flowchart LR
 
 Закреплённый экземпляр DuckDB — `duckdb__duckdb-26419`, issue 26401. Тест `test/sql/subquery/exists/test_issue_26401.test` падает до эталона (`0 <> 1`) и проходит после. Логи: `data/oracle/fea4498ea5e7ba7687aab2619417eed9139960eb/`.
 
+Первые принятые `--harvest` экземпляры, каждый не из закреплённого списка: `sqlite__sqlite-3bce1260e7ef` (`test/date.test`), `duckdb__duckdb-25817` (`test/sql/function/list/lambdas/reduce_captured_columns.test`), `postgres__postgres-1a846a555afb` (регресс `foreign_key`).
+
 ## Что видит агент
 
 Агенту отдаются постановка и `test_patch`. `gold_patch` хранится для проверки и в промпт не входит. На `base_sha` сначала накладывается тестовый патч: эти тесты должны падать. Затем накладывается эталон кода: те же тесты должны проходить. После попытки агента тестовые файлы возвращаются к патчу задачи, чтобы закрыть тест правкой самого теста было нельзя.
 
-`test_patch` — это кусок diff между родителем и коммитом, в котором остались только тесты. У DuckDB и SQLite граница берётся из префиксов `repos.toml`. У PostgreSQL граница берётся из списков `test_files` и `solution` готового образца. Код ядра уходит в `gold_patch`.
+`test_patch` — это кусок diff между родителем и коммитом, в котором остались только тесты. У DuckDB и SQLite граница берётся из префиксов `repos.toml`. В закреплённом запуске PostgreSQL граница берётся из списков `test_files` и `solution` готового образца. В `--harvest` граница — каталог `src/test/regress/`. Код ядра уходит в `gold_patch`.
 
 Так устроен SWE-bench и SWE-rebench: проверяющий тест агенту виден, исправление скрыто. Готовый diff кода в условие не входит. Тест, по которому агента оценивают, в условие входит.
 
@@ -82,7 +86,7 @@ flowchart LR
 | Ядро | Поле `oracle` | Чем проверяется |
 |---|---|---|
 | DuckDB | `unittest` | бинарник тестов ядра, только файлы из `fail_to_pass` |
-| PostgreSQL | `pg_regress` | регрессионный тест из образца |
+| PostgreSQL | `pg_regress` | в закреплённом запуске тест из образца; в `--harvest` имя из изменённого `expected/*.out` |
 | SQLite | `testfixture` | TCL-тест `test/*.test` |
 
 Чужой оракул на чужое ядро не ставится: падение `pg_regress` и падение `testfixture` устроены по-разному. Коммит остаётся в наборе, если тесты падают на базе с тестовым патчем и проходят после скрытого эталона. Та же проверка потом отличает удачный diff агента от неудачного. OpenCode запускается только после того, как оракул экземпляр принял.
@@ -94,12 +98,14 @@ flowchart LR
 
 | id       | Репозиторий                | Лицензия           | Оракул        | Сейчас                      |
 | -------- | -------------------------- | ------------------ | ------------- | --------------------------- |
-| duckdb   | github.com/duckdb/duckdb   | MIT                | `unittest`    | включён, PR 26419           |
-| postgres | зеркало git.postgresql.org | PostgreSQL License | `pg_regress`  | включён, готовые образцы pg-gym |
-| sqlite   | github.com/sqlite/sqlite   | public domain      | `testfixture` | включён, sha `bfb858c596f6` |
+| duckdb   | github.com/duckdb/duckdb   | MIT                | `unittest`    | закреплён PR 26419; `--harvest` читает `origin/main` |
+| postgres | зеркало git.postgresql.org | PostgreSQL License | `pg_regress`  | закреплённый запуск читает образцы pg-gym; `--harvest` читает `master` |
+| sqlite   | github.com/sqlite/sqlite   | public domain      | `testfixture` | закреплён sha `bfb858c596f6`; `--harvest` читает `master` |
 
 
 Префиксы кода DuckDB: `src/`, `extension/core_functions/`. Встроенные функции ядра лежат во втором пути, это не отдельный репозиторий расширений. Префиксы тестов: `test/sql/`, `test/optimizer/`, `test/api/`, `test/common/`, `test/issues/`. Каталоги `extension/tpch/dbgen/answers/` и `extension/tpcds/dsdgen/answers/` считаются массовой генерацией и отсекаются.
+
+Для `--harvest` в `repos.toml` записан отдельный SQL-срез. DuckDB: `extension/core_functions/` и `test/sql/`. PostgreSQL: `src/backend/utils/adt/` и `src/test/regress/`. SQLite: `src/func.c`, `src/date.c`, `src/printf.c` и `test/*.test`. Амальгама `sqlite3.c` и `sqlite3.h` по-прежнему не считается кодом.
 
 Команда сборки и теста заморожены после первой успешной сборки, а не взяты из статьи:
 
@@ -125,14 +131,15 @@ dags/sqlite_pipeline.py    DAG SQLite
 prompts/opencode_system.txt
 prompts/opencode.json      температура 0 и 50 шагов, ключ не хранится
 src/db_pipeline/           стадии и модель экземпляра
-tests/                     фильтр на 20 изменениях, разрез патча, журнал
+tests/                     фильтр на 20 изменениях, SQL-двадцатки, разрез патча, журнал
 constraints/               constraints Airflow 2.11 для Python 3.11
 data/                      в gitignore: клон, журнал, JSON, логи, AIRFLOW_HOME
 ```
 
 `data/` не коммитится. Туда попадают:
 
-- `data/clones/duckdb` — частичный клон `--filter=blob:none --single-branch --depth 200`;
+- `data/clones/<ядро>` — частичный клон; у DuckDB глубина из конфига 200, `--harvest` при необходимости углубляет историю;
+- `data/cursors/<ядро>.json` — последний просмотренный sha обхода;
 - `data/journal/<sha>.json` — одна запись на sha;
 - `data/tasks/<instance_id>.json` — экземпляр;
 - `data/runs/<instance_id>.json` — прогон;
@@ -160,7 +167,7 @@ uv run mypy
 uv run pyright
 ```
 
-Фильтр на размеченной выборке заново пишет `data/filter_sample.jsonl`. Метки в `tests/fixtures/labeled_changes.json` после просмотра решения фильтра не меняются. Если совпадение падает ниже 16 из 20, правятся префиксы в `repos.toml`, а не разметка. Расхождения пишутся в `data/filter_notes.md`. Сейчас совпадение 20 из 20.
+Фильтр на размеченной выборке заново пишет `data/filter_sample.jsonl`. Метки в `tests/fixtures/labeled_changes.json` после просмотра решения фильтра не меняются. Если совпадение падает ниже 16 из 20, правятся префиксы в `repos.toml`, а не разметка. Расхождения пишутся в `data/filter_notes.md`. Сейчас совпадение 20 из 20. То же правило для SQL-двадцаток `tests/fixtures/labeled_sql_duckdb.json`, `labeled_sql_postgres.json` и `labeled_sql_sqlite.json`: на каждом ядре 20 из 20, заметки `data/<ядро>_sql_filter_notes.md`.
 
 ## Запуск
 
@@ -180,7 +187,7 @@ uv run airflow dags list
 uv run airflow dags test duckdb_pipeline 2026-10-10
 ```
 
-Тот же проход без планировщика проводит одно ядро до журнала. Повтор на том же sha останавливается на фильтре и не создаёт второй JSON задачи.
+Тот же проход без планировщика проводит одно ядро до журнала. Повтор на том же sha останавливается на фильтре и не создаёт второй JSON задачи. DAG остаётся этим закреплённым проходом.
 
 ```bash
 uv run python -m db_pipeline --core duckdb
@@ -188,7 +195,15 @@ uv run python -m db_pipeline --core postgres
 uv run python -m db_pipeline --core sqlite
 ```
 
-Для PostgreSQL пока используются уже собранные экземпляры проекта pg-gym: сторож не выбирает коммиты из истории зеркала, а берёт три JSON из `suites/commit/data/samples`. Постановка — поле `goal` такого образца. После трёх отказов оракула поиск останавливается. Дальше необходима проверка сценария полной цепи сбора: выбор коммита, отсев и постановка самим сборщиком, без готового образца. SQLite берёт закреплённый sha, постановка — сообщение коммита. В обоих случаях `statement_source=commit_message`.
+Закреплённый PostgreSQL читает три JSON из `suites/commit/data/samples`. Постановка — поле `goal` такого образца. После трёх отказов оракула поиск останавливается. SQLite в этом запуске берёт закреплённый sha, постановка — сообщение коммита.
+
+Обход новых SQL-коммитов — отдельный флаг. `--scan` задаёт, сколько коммитов смотреть, `--accept` — сколько задач должен принять оракул. `--oracle-budget` ограничивает число сборок за запуск; 0 оставляет сборки без потолка. OpenCode в этом режиме не запускается. Повтор того же sha второй JSON не создаёт, курсор сдвигается, следующий запуск продолжает историю.
+
+```bash
+uv run python -m db_pipeline --core sqlite --harvest --scan 40 --accept 1
+uv run python -m db_pipeline --core duckdb --harvest --scan 40 --accept 1
+uv run python -m db_pipeline --core postgres --harvest --scan 40 --accept 1
+```
 
 Образ инструментов, если его ещё нет:
 
@@ -206,4 +221,4 @@ docker build -t db-pipeline-duckdb-tools:local -f docker/duckdb.Dockerfile docke
 
 ## Чего в этом компоненте нет
 
-Импорт JSON в pg-gym, повтор 104 задач, Langfuse, граф, пять повторов и языковой отбор. 
+Импорт JSON в pg-gym, повтор 104 задач, Langfuse, граф, пять повторов, языковой отбор и ночной сбор до 300 задач на ядро. Команда `--harvest` для такого сбора уже есть. 
