@@ -230,7 +230,11 @@ def diff_range(clone: Path, base_sha: str, sha: str) -> str:
 def checkout_local(clone: Path, work: Path, sha: str) -> None:
     if work.exists():
         raise PipelineError("workdir", f"каталог уже есть: {work}")
-    run_git(clone, ["checkout", "--detach", sha])
+    # Клон — рабочая копия сборщика, не дерево разработчика. Прошлый прогон
+    # мог оставить в нём правку закреплённого PR. Без --force следующий sha
+    # не переключается, а copytree уносит чужие файлы в оракул.
+    run_git(clone, ["checkout", "--force", "--detach", sha])
+    run_git(clone, ["clean", "-fd"])
     work.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(clone, work, symlinks=True, ignore=shutil.ignore_patterns(".git"))
     _commit_snapshot(work, f"base {sha}")
