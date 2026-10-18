@@ -62,6 +62,35 @@ def _excluded_name(path: str, excluded: list[str]) -> bool:
     return name in excluded
 
 
+REGRESS_PREFIX = "src/test/regress/"
+
+
+@beartype
+def split_regress_diff(diff_text: str) -> tuple[str, str]:
+    # Код и регресс PostgreSQL оба лежат под src/. Граница harvest — каталог регресса,
+    # а не списки образца: всё вне src/test/regress/ остаётся в скрытом эталоне.
+    test_chunks: list[str] = []
+    gold_chunks: list[str] = []
+    for chunk in _chunks(diff_text):
+        path = path_from_header(chunk.splitlines()[0] if chunk.splitlines() else "")
+        if path.startswith(REGRESS_PREFIX):
+            test_chunks.append(chunk)
+        elif path != "":
+            gold_chunks.append(chunk)
+    return "".join(test_chunks), "".join(gold_chunks)
+
+
+@beartype
+def regress_test_names(test_patch: str) -> list[str]:
+    names: list[str] = []
+    for path in paths_in_diff(test_patch):
+        if not path.startswith(f"{REGRESS_PREFIX}expected/") or not path.endswith(".out"):
+            continue
+        base = path.rsplit("/", 1)[-1]
+        names.append(base[: -len(".out")])
+    return names
+
+
 @beartype
 def paths_in_diff(diff_text: str) -> list[str]:
     paths: list[str] = []

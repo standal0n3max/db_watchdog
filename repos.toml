@@ -37,6 +37,10 @@ sample_candidates = []
 code_exclude = []
 test_suffixes = []
 generated_names = []
+# Срез SQL для --harvest. Закреплённые code_prefixes и test_prefixes не сужаются.
+sql_code_prefixes = ["extension/core_functions/"]
+sql_test_prefixes = ["test/sql/"]
+sql_test_suffixes = []
 
 [[cores]]
 id = "postgres"
@@ -46,7 +50,8 @@ clone_url = "https://git.postgresql.org/git/postgresql.git"
 license = "PostgreSQL License"
 oracle = "pg_regress"
 enabled = true
-# Префиксы не режут diff: и код, и регресс лежат под src/. Разрез — по спискам образца.
+# Префиксы не режут diff: и код, и регресс лежат под src/.
+# Закреплённый запуск режет по спискам образца. --harvest режет по src/test/regress/.
 code_prefixes = ["src/", "contrib/"]
 test_prefixes = ["src/test/"]
 generated_prefixes = []
@@ -68,6 +73,9 @@ sample_candidates = [
 code_exclude = []
 test_suffixes = []
 generated_names = []
+sql_code_prefixes = ["src/backend/utils/adt/"]
+sql_test_prefixes = ["src/test/regress/"]
+sql_test_suffixes = []
 
 [[cores]]
 id = "sqlite"
@@ -98,3 +106,6 @@ sample_candidates = []
 code_exclude = ["sqlite3.c", "sqlite3.h"]
 test_suffixes = [".test"]
 generated_names = ["sqlite3.c", "sqlite3.h"]
+sql_code_prefixes = ["src/func.c", "src/date.c", "src/printf.c"]
+sql_test_prefixes = ["test/"]
+sql_test_suffixes = [".test"]

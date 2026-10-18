@@ -17,8 +17,11 @@ from db_pipeline.git_ops import (
     commit_subject,
     diff_range,
     ensure_clone,
+    ensure_origin_branch,
     ensure_sha,
     file_changes,
+    harvest_window,
+    pr_number_from_subject,
     resolve_pr_sha,
 )
 from db_pipeline.journal import create_journal, known_shas, read_journal, update_journal, write_json, write_json_once
@@ -34,7 +37,13 @@ from db_pipeline.models import (
 from db_pipeline.opencode_run import run_opencode
 from db_pipeline.parsing import as_dict, as_str, as_str_list, load_json_file
 from db_pipeline.paths import resolve_data
-from db_pipeline.samples import PostgresSample, bundled_git_dir, limit_regress_command, sample_by_name, sample_by_sha
+from db_pipeline.samples import (
+    PostgresSample,
+    bundled_git_dir,
+    limit_regress_command,
+    sample_by_name,
+    sample_by_sha,
+)
 from db_pipeline.statements import choose_statement
 from db_pipeline.verify_environment import OracleResult, verify_task
 
@@ -156,6 +165,67 @@ def run_all(
 
 
 @beartype
+def run_harvest(
+    data: Path | None = None,
+    core_id: str = "duckdb",
+    scan: int = 40,
+    accept: int = 1,
+    oracle_budget: int = 0,
+) -> StageResult:
+    # Закреплённый путь и счётчик трёх отказов сюда не входят.
+    # OpenCode не вызывается: экземпляр для датасета готов после оракула.
+    root = resolve_data(data)
+    ensure_decisions(root)
+    summary = _blank()
+    summary["repository_id"] = core_id
+    try:
+        core = require_core(load_cores(), core_id)
+        if not core.enabled:
+            raise PipelineError("harvest", f"ядро {core.id} выключено")
+        if len(core.sql_code_prefixes) == 0 or len(core.sql_test_prefixes) == 0:
+            raise PipelineError("harvest", "в конфиге нет SQL-префиксов")
+        clone = _clone_path(root, core)
+        ensure_origin_branch(core, clone)
+        cursor = read_cursor(root, core.id)
+        window = harvest_window(clone, core, known_shas(root), cursor, scan)
+        if len(window) == 0:
+            _fail(summary, "empty_window", "в окне нет новых коммитов")
+            return write_record(summary, root)
+        accepted = 0
+        builds = 0
+        last = summary
+        for sha, subject in window:
+            if oracle_budget > 0 and builds >= oracle_budget:
+                last["detail"] = f"потолок сборок {builds}, принято {accepted}"
+                if last["status"] != "verified":
+                    _fail(last, "oracle_budget", "потолок сборок за этот запуск")
+                return write_record(last, root)
+            state = _ready_harvest(core.id, sha, subject)
+            state = fetch_change(state, root)
+            if state["status"] != "ready":
+                _journal_fetch_failure(root, state)
+                write_cursor(root, core.id, sha)
+                last = write_record(state, root)
+                continue
+            state = filter_stage(state, root)
+            state = compile_stage(state, root)
+            if state["status"] == "accepted":
+                builds += 1
+                state = verify_stage(state, root)
+                if state["status"] == "verified":
+                    accepted += 1
+            last = write_record(state, root)
+            write_cursor(root, core.id, sha)
+            if accepted >= accept:
+                break
+        last["detail"] = f"просмотрено {len(window)}, принято {accepted}, сборок {builds}"
+        return write_record(last, root)
+    except (PipelineError, OSError, ValueError) as exc:
+        _fail(summary, "harvest_failed", str(exc))
+    return write_record(summary, root)
+
+
+@beartype
 def watch_repos(
     data: Path | None = None,
     pr_number: int | None = None,
@@ -190,7 +260,12 @@ def fetch_change(state: StageResult, data: Path | None = None) -> StageResult:
         core = _core_of(state)
         clone = _clone_path(root, core)
         sha = state["sha"]
-        if core.id == "postgres":
+        if state["detail"] == "harvest":
+            if core.id == "duckdb":
+                _fetch_duckdb(state, root, core, clone, sha)
+            else:
+                _fetch_commit_message(state, root, core, clone, sha)
+        elif core.id == "postgres":
             _fetch_postgres(state, root, core, clone, sha)
         elif core.id == "sqlite":
             _fetch_commit_message(state, root, core, clone, sha)
@@ -216,8 +291,19 @@ def filter_stage(state: StageResult, data: Path | None = None) -> StageResult:
     try:
         core = _core_of(state)
         change = _load_change(root, sha)
-        solution_paths, test_paths = _sample_lists(root, core, sha)
-        decision = filter_candidate(change, core, known_shas(root), solution_paths, test_paths)
+        harvest = state["detail"] == "harvest"
+        if harvest:
+            solution_paths, test_paths = None, None
+        else:
+            solution_paths, test_paths = _sample_lists(root, core, sha)
+        decision = filter_candidate(
+            change,
+            core,
+            known_shas(root),
+            solution_paths,
+            test_paths,
+            harvest,
+        )
         state["reason_code"] = decision.reason_code
         state["reason"] = decision.reason
         if decision.accept:
@@ -265,7 +351,18 @@ def compile_stage(state: StageResult, data: Path | None = None) -> StageResult:
         source_text = (folder / "statement_source.txt").read_text(encoding="utf-8").strip()
         source = parse_statement_source(source_text)
         diff_text = (folder / "diff.patch").read_text(encoding="utf-8")
-        if core.id == "postgres":
+        if core.id == "postgres" and state["detail"] == "harvest":
+            command = limit_regress_command(core.oracle_command)
+            task = compile_task(
+                change,
+                core,
+                diff_text,
+                statement,
+                source,
+                oracle_command=command,
+                regress_split=True,
+            )
+        elif core.id == "postgres":
             sample = _saved_sample(folder)
             task = compile_task(
                 change,
@@ -611,6 +708,62 @@ def _clone_path(data: Path, core: CoreConfig) -> Path:
 @beartype
 def _load_change(data: Path, sha: str) -> ChangeView:
     return change_from_dict(load_json_file(data / "changes" / sha / "change.json"))
+
+
+@beartype
+def read_cursor(root: Path, core_id: str) -> str:
+    path = root / "cursors" / f"{core_id}.json"
+    if not path.is_file():
+        return ""
+    raw = as_dict(load_json_file(path), "cursor")
+    value = raw.get("sha")
+    if not isinstance(value, str):
+        return ""
+    return value
+
+
+@beartype
+def write_cursor(root: Path, core_id: str, sha: str) -> None:
+    if sha == "":
+        return
+    write_json(root / "cursors" / f"{core_id}.json", {"sha": sha})
+
+
+@beartype
+def _ready_harvest(core_id: str, sha: str, subject: str) -> StageResult:
+    state = _blank()
+    state["status"] = "ready"
+    state["repository_id"] = core_id
+    state["sha"] = sha
+    state["detail"] = "harvest"
+    if core_id == "duckdb":
+        number = pr_number_from_subject(subject)
+        if number is not None:
+            state["pr_number"] = str(number)
+    return state
+
+
+@beartype
+def _journal_fetch_failure(root: Path, state: StageResult) -> None:
+    sha = state["sha"]
+    if sha == "" or read_journal(root, sha) is not None:
+        return
+    create_journal(
+        root,
+        {
+            "sha": sha,
+            "repository_id": state["repository_id"],
+            "decision": "reject",
+            "reason_code": state["reason_code"],
+            "reason": state["reason"],
+            "instance_id": "",
+            "pr_number": state["pr_number"],
+            "sample": "",
+            "recorded_at": _now(),
+            "oracle_status": "skipped",
+            "oracle_reason": "",
+        },
+    )
 
 
 @beartype

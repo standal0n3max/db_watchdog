@@ -26,7 +26,7 @@ from db_pipeline.stages import (
     tags=["postgres"],
 )
 def postgres_pipeline() -> None:
-    """Сбор одного экземпляра PostgreSQL из готового образца."""
+    """Закреплённый проход PostgreSQL по образцу pg-gym. Обход истории — команда --harvest."""
 
     @task
     def watchRepos() -> StageResult:

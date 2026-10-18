@@ -37,6 +37,9 @@ class CoreConfig:
     code_exclude: list[str]
     test_suffixes: list[str]
     generated_names: list[str]
+    sql_code_prefixes: list[str]
+    sql_test_prefixes: list[str]
+    sql_test_suffixes: list[str]
 
 
 @beartype
@@ -108,6 +111,9 @@ def _core_from_row(row: dict[str, object]) -> CoreConfig:
         code_exclude=_str_list_or(row, "code_exclude"),
         test_suffixes=_str_list_or(row, "test_suffixes"),
         generated_names=_str_list_or(row, "generated_names"),
+        sql_code_prefixes=_str_list_or(row, "sql_code_prefixes"),
+        sql_test_prefixes=_str_list_or(row, "sql_test_prefixes"),
+        sql_test_suffixes=_str_list_or(row, "sql_test_suffixes"),
     )
 
 

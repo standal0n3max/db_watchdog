@@ -1,0 +1,2687 @@
+{
+  "description": "Ручная разметка 20 коммитов postgres до прогона SQL-фильтра. Метки expected не менять.",
+  "changes": [
+    {
+      "sha": "1a846a555afb0e5f2008f3aefe8f77acbe6ffba6",
+      "base_sha": "142fd8ff13dee8ff6665615027386908e9768d43",
+      "subject": "Check EXECUTE privilege on functions invoked by the RI fast path",
+      "body": "ri_FastPathCheck() invokes two functions on the FK values: the\nequality operator's function, via the ScanKey the index AM evaluates,\nand, when the FK column's type differs from the PK column's, the\nimplicit cast function.  The SPI path gets EXECUTE on both checked by\nExecInitFunc() when it initializes the generated query, as the\nreferenced table's owner, but the fast path performed neither check.\n",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/ri_triggers.c",
+          "status": "modified",
+          "additions": 40,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/expected/foreign_key.out",
+          "status": "modified",
+          "additions": 81,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/foreign_key.sql",
+          "status": "modified",
+          "additions": 81,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "adt и expected/*.out"
+    },
+    {
+      "sha": "ab713cdcdbfd05b72a6959ff17aad56cf075ae31",
+      "base_sha": "c62b330912e2095dc8dee2f749adf7e5d94ca611",
+      "subject": "Fix PASSING of toasted text values in JSON query functions",
+      "body": "The PASSING arguments of JSON_EXISTS(), JSON_QUERY(), JSON_VALUE() and\nJSON_TABLE() are evaluated by plain expression steps and given to the\njsonpath executor as-is.\n\nWhen dealing with a varlena, JsonItemFromDatum() was building a\njbvString directly the contents of a varlena.  For a varatt_external\n(varatt_external[oid/oid8] on HEAD), this ignored that the contents of\nthe varlena need to be detoas",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/jsonpath_exec.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "src/test/regress/expected/sqljson_queryfuncs.out",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/sqljson_queryfuncs.sql",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "jsonpath и expected/*.out"
+    },
+    {
+      "sha": "c62b330912e2095dc8dee2f749adf7e5d94ca611",
+      "base_sha": "a3f4fc5bacc8c4868ad6b5a02a65cbb4c0846c01",
+      "subject": "Invalidate RI fast-path metadata on operator family changes",
+      "body": "The RI fast path checks a foreign key by probing the referenced\nunique index directly, using the equality operator recorded for\nthe constraint.  Whether the fast path can be used is decided once\nand cached in RI_ConstraintInfo, and that cache is invalidated on\npg_constraint changes but not on pg_amop.  So after an ALTER\nOPERATOR FAMILY drops the recorded operator and adds another in its\nplace, the",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/ri_triggers.c",
+          "status": "modified",
+          "additions": 43,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/regress/expected/foreign_key.out",
+          "status": "modified",
+          "additions": 67,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/foreign_key.sql",
+          "status": "modified",
+          "additions": 56,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "ri_triggers и expected/*.out"
+    },
+    {
+      "sha": "2c45694a240e89c3f7d848d433f78e394521b6d6",
+      "base_sha": "7b879c485243e61a0d4cb169717a8e96e9e875c2",
+      "subject": "Fix RI fast-path permission checks",
+      "body": "The fast path required table-level SELECT on the referenced table,\nrejecting checks that the SPI path allows with column-level grants.\nIt also omitted the UPDATE privilege required by FOR KEY SHARE.\n\nWhen table privileges do not suffice, use ExecCheckOneRelPerms() with\nthe referenced key columns as selectedCols and an empty updatedCols.\nThis accepts SELECT on all referenced columns and UPDATE on a",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/ri_triggers.c",
+          "status": "modified",
+          "additions": 36,
+          "deletions": 11
+        },
+        {
+          "path": "src/test/regress/expected/foreign_key.out",
+          "status": "modified",
+          "additions": 53,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/regress/sql/foreign_key.sql",
+          "status": "modified",
+          "additions": 57,
+          "deletions": 2
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "ri_triggers и expected/*.out"
+    },
+    {
+      "sha": "72af14bccd2127bf20ddeaf198b78de46e9e892b",
+      "base_sha": "862092932c9479b79732f3b441da05453ea5e06d",
+      "subject": "Use hex_decode_safe() to speed up UUID input.",
+      "body": "Previously, string_to_uuid() decoded one byte at a time, calling\nisxdigit() twice and strtoul() once for every pair of hexadecimal\ndigits. Commit ec8719ccbfcd made hex_decode_safe() decode a run of\nhexadecimal digits in bulk, so add a fast path for the two common\nshapes: 32 contiguous hexadecimal digits, and the canonical\n8x-4x-4x-4x-12x form, each optionally wrapped in braces.\n\nAnything else, and",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/uuid.c",
+          "status": "modified",
+          "additions": 96,
+          "deletions": 5
+        },
+        {
+          "path": "src/test/regress/expected/uuid.out",
+          "status": "modified",
+          "additions": 74,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/uuid.sql",
+          "status": "modified",
+          "additions": 24,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "uuid и expected/*.out"
+    },
+    {
+      "sha": "4000ab1decb6138a11fb4423237589376cb9ff54",
+      "base_sha": "072d4c4240572980b9c101ff5d2b85e656e79275",
+      "subject": "Switch pg_column_toast_chunk_id() return value from oid to oid8",
+      "body": "This is required for a follow-up commit that will add support for 8-byte\nTOAST values, with this function being changed so as it is able to\nsupport the largest TOAST value type available.\n\nMost of the changes in this commit are in the regression tests that use\npg_column_toast_chunk_id(), that need to use some oid8-ish changes.  The\nchange is surprisingly not invasive as casts from oid to oid8 are\n",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "doc/src/sgml/func/func-admin.sgml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/varlena.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/catalog/catversion.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/catalog/pg_proc.dat",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/isolation/expected/cluster-toast-value-reuse.out",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/isolation/specs/cluster-toast-value-reuse.spec",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/injection_points/specs/repack_toast.spec",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/expected/misc_functions.out",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/sql/misc_functions.sql",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "varlena и expected/*.out"
+    },
+    {
+      "sha": "0b0b413292161cf709b9dbc4d5adee23be53ee34",
+      "base_sha": "5624de9904ca560c0d4473cb9e86108f4b69be38",
+      "subject": "Fall back to SPI for RI checks with mismatched index collations",
+      "body": "The fast path probes using the referenced index's collation. When that\ncollation differs from the referenced column's, it can reject valid\nreferences or accept invalid ones. Changing the scan key's collation\nis not sufficient, since btree navigation must use the ordering under\nwhich the index was built.\n\nCache index eligibility lazily after locking the referenced table,\nreloading the constraint in",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/ri_triggers.c",
+          "status": "modified",
+          "additions": 129,
+          "deletions": 28
+        },
+        {
+          "path": "src/test/regress/expected/collate.icu.utf8.out",
+          "status": "modified",
+          "additions": 64,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/collate.icu.utf8.sql",
+          "status": "modified",
+          "additions": 60,
+          "deletions": 0
+        },
+        {
+          "path": "src/tools/pgindent/typedefs.list",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "ri_triggers и expected/*.out"
+    },
+    {
+      "sha": "3f660d86ba65d9747d5e2da418e24bd023271241",
+      "base_sha": "c8985a09b7b52519f794c433e5f8f7311a77a2fc",
+      "subject": "Take RI fast-path snapshot after locking referenced relation",
+      "body": "ri_FastPathCheck() acquired its scan snapshot before opening the\nreferenced relation.  If it then waited for the relation lock in READ\nCOMMITTED mode, a referenced row committed during the wait would not be\nvisible to the old snapshot.  The check could consequently report a\nforeign key violation even though the referenced row existed.\n\nThe batched path acquires its scan snapshot after opening the ",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/ri_triggers.c",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 8
+        },
+        {
+          "path": "src/test/isolation/expected/fk-snapshot-2.out",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/isolation/specs/fk-snapshot-2.spec",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/modules/injection_points/Makefile",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/modules/injection_points/expected/ri_fastpath_snapshot.out",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/modules/injection_points/meson.build",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/modules/injection_points/specs/ri_fastpath_snapshot.spec",
+          "status": "modified",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/expected/foreign_key.out",
+          "status": "modified",
+          "additions": 69,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/foreign_key.sql",
+          "status": "modified",
+          "additions": 65,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "ri_triggers и expected/*.out"
+    },
+    {
+      "sha": "a63df2664225d06d5bee5dd9195f6d10e7fa1502",
+      "base_sha": "8e483af5515ec4ee90d17a3864f5bb764e4e9c47",
+      "subject": "Handle PG_INT32_MIN negation overflow in right()",
+      "body": "A negative n means \"return all but the first |n| characters\", so\ntext_right() negates n before clipping.  Negating PG_INT32_MIN\noverflows; with -fwrapv the result is PG_INT32_MIN again, still\nnegative, and pg_mbcharcliplen() then returns an offset of zero,\nso the whole string is returned where the correct answer is an\nempty string:\n\n  SELECT right('abcdef', (-2147483648)::int4); -- 'abcdef', want ",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/varlena.c",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/expected/text.out",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/text.sql",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "varlena и expected/*.out"
+    },
+    {
+      "sha": "3b120b1e94dd0387ca40e1e356f6b7eb8793d297",
+      "base_sha": "fa68aeeab115abf46abf8277f6dd6a89f5f93440",
+      "subject": "Fix integer to_char() overflow with V format",
+      "body": "When to_char() formatted an integer value with a V pattern, it could\nreturn an incorrect result instead of reporting an overflow. V shifts\nthe decimal point by multiplying the input value by a power of ten before\nformatting it, so, for example,\n\n    to_char(3, '9V999999999')\n\nrequires computing 3 * 10^9. This result does not fit in int4, but\nthe integer variant of to_char() performed the multiplic",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/utils/adt/formatting.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 7
+        },
+        {
+          "path": "src/test/regress/expected/int4.out",
+          "status": "modified",
+          "additions": 27,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/int4.sql",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "formatting и expected/int4.out"
+    },
+    {
+      "sha": "51c43a5dbd86ad8461544e54c00bd9f487abfacd",
+      "base_sha": "4fb6e9eb753b92c3241473470b66c15523d8de33",
+      "subject": "Use safer allocation routines in more places of the tree",
+      "body": "This is part of a more global effort to modernize the code tree with\nsafer allocation functions, which offer more protection in terms of:\n- stronger type safety guarantees\n- size overflow checks, particulary for arrays.\n\nThis set of updates includes allocation changes based on\npalloc_object(), palloc_array() and repalloc_array().  This work is\nsimilar to 1b105f9472bd, expanding more the new APIs i",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "contrib/btree_gist/btree_bool.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_cash.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_date.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_enum.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_float4.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_float8.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_inet.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_int2.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_int4.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_int8.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_interval.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_macaddr.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_macaddr8.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_oid.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_time.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_ts.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/btree_gist/btree_utils_num.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "contrib/btree_gist/btree_uuid.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/dict_xsyn/dict_xsyn.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/file_fdw/file_fdw.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "contrib/hstore/hstore_gin.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "contrib/hstore/hstore_io.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "contrib/hstore/hstore_op.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "contrib/pageinspect/btreefuncs.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/pageinspect/ginfuncs.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/pg_logicalinspect/pg_logicalinspect.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "contrib/pg_plan_advice/pgpa_scan.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/pg_stash_advice/stashpersist.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "contrib/pg_stat_statements/pg_stat_statements.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/pg_trgm/trgm_gist.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "contrib/pg_trgm/trgm_regexp.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "contrib/pg_visibility/pg_visibility.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "contrib/pgrowlocks/pgrowlocks.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "contrib/postgres_fdw/connection.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "contrib/postgres_fdw/postgres_fdw.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 7
+        },
+        {
+          "path": "contrib/seg/seg.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "contrib/tablefunc/tablefunc.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "contrib/xml2/xpath.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "contrib/xml2/xslt_proc.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "doc/src/sgml/xfunc.sgml",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/access/brin/brin_minmax_multi.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/common/printtup.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/common/reloptions.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/access/common/tupdesc.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/access/gin/gindatapage.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/gin/ginget.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/access/gin/gininsert.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/access/gin/ginpostinglist.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/access/gin/ginscan.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/access/gist/gistbuildbuffers.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 9
+        },
+        {
+          "path": "src/backend/access/gist/gistget.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/access/gist/gistproc.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/access/gist/gistscan.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/access/gist/gistsplit.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/access/gist/gistxlog.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/access/heap/heapam.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/heap/vacuumlazy.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/nbtree/nbtinsert.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/access/nbtree/nbtpage.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/access/nbtree/nbtpreprocesskeys.c",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 10
+        },
+        {
+          "path": "src/backend/access/nbtree/nbtree.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/access/tablesample/bernoulli.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/access/transam/multixact.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/access/transam/twophase.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/transam/xact.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/access/transam/xloginsert.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/backup/basebackup_incremental.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/catalog/aclchk.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/catalog/dependency.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 13
+        },
+        {
+          "path": "src/backend/catalog/heap.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/catalog/pg_constraint.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/catalog/pg_inherits.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/catalog/pg_shdepend.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/commands/alter.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/backend/commands/analyze.c",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 26
+        },
+        {
+          "path": "src/backend/commands/async.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/commands/collationcmds.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/commands/copyfrom.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/backend/commands/copyfromparse.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/commands/copyto.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/commands/dbcommands.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/commands/explain.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/commands/explain_dr.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/commands/explain_state.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/commands/extension.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/commands/functioncmds.c",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "src/backend/commands/policy.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/commands/subscriptioncmds.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/commands/tablecmds.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/commands/tablespace.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/commands/trigger.c",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 15
+        },
+        {
+          "path": "src/backend/commands/vacuum.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/execExpr.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/executor/execExprInterp.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/executor/execGrouping.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/executor/execJunk.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/executor/execParallel.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/executor/execPartition.c",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 12
+        },
+        {
+          "path": "src/backend/executor/execSRF.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/executor/execTuples.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/executor/execUtils.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/executor/functions.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/nodeAgg.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 15
+        },
+        {
+          "path": "src/backend/executor/nodeAppend.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/executor/nodeBitmapAnd.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/nodeBitmapOr.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/nodeGather.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/executor/nodeGatherMerge.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/executor/nodeIncrementalSort.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/executor/nodeIndexscan.c",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 27
+        },
+        {
+          "path": "src/backend/executor/nodeMemoize.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/executor/nodeMergejoin.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/nodeModifyTable.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/nodeSetOp.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/executor/nodeSubplan.c",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "src/backend/executor/nodeTidscan.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 11
+        },
+        {
+          "path": "src/backend/executor/nodeValuesscan.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/executor/spi.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/jit/llvm/llvmjit_expr.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/lib/bipartite_match.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/lib/knapsack.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/libpq/be-secure-common.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/libpq/be-secure-openssl.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/libpq/hba.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/nodes/list.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/nodes/queryjumblefuncs.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/nodes/readfuncs.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/optimizer/path/allpaths.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/optimizer/path/equivclass.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/optimizer/path/pathkeys.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/optimizer/plan/analyzejoins.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/optimizer/plan/createplan.c",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 23
+        },
+        {
+          "path": "src/backend/optimizer/plan/initsplan.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/optimizer/plan/planner.c",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 11
+        },
+        {
+          "path": "src/backend/optimizer/plan/setrefs.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/optimizer/prep/prepjointree.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 10
+        },
+        {
+          "path": "src/backend/optimizer/util/appendinfo.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/optimizer/util/clauses.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/optimizer/util/extendplan.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/optimizer/util/inherit.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/optimizer/util/plancat.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/optimizer/util/tlist.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/parser/analyze.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/parser/parse_clause.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/parser/parse_cte.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/parser/parse_relation.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/partitioning/partbounds.c",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 14
+        },
+        {
+          "path": "src/backend/partitioning/partdesc.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/partitioning/partprune.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 6
+        },
+        {
+          "path": "src/backend/postmaster/autovacuum.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/postmaster/checkpointer.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/postmaster/datachecksum_state.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/postmaster/pmchild.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/postmaster/postmaster.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/replication/pgoutput/pgoutput.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/rewrite/rewriteHandler.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/statistics/dependencies.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/statistics/extended_stats.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/statistics/mcv.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/statistics/mvdistinct.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/storage/buffer/bufmgr.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/storage/ipc/shmem.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/storage/lmgr/deadlock.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 10
+        },
+        {
+          "path": "src/backend/storage/lmgr/lock.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 14
+        },
+        {
+          "path": "src/backend/storage/lmgr/lwlock.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/storage/smgr/md.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/tcop/fastpath.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/tsearch/dict_thesaurus.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/tsearch/spell.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/backend/tsearch/ts_parse.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/tsearch/wparser.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/tsearch/wparser_def.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/activity/pgstat_xact.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/acl.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/array_typanalyze.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/array_userfuncs.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 7
+        },
+        {
+          "path": "src/backend/utils/adt/arrayfuncs.c",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 23
+        },
+        {
+          "path": "src/backend/utils/adt/arrayutils.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/enum.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/jsonb_util.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/utils/adt/jsonfuncs.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 7
+        },
+        {
+          "path": "src/backend/utils/adt/levenshtein.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/like_support.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/lockfuncs.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/utils/adt/multirangetypes.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 7
+        },
+        {
+          "path": "src/backend/utils/adt/name.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/numeric.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/utils/adt/oracle_compat.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/utils/adt/orderedsetaggs.c",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 10
+        },
+        {
+          "path": "src/backend/utils/adt/pg_ndistinct.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/rangetypes_typanalyze.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/regexp.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/rowtypes.c",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 16
+        },
+        {
+          "path": "src/backend/utils/adt/ruleutils.c",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 13
+        },
+        {
+          "path": "src/backend/utils/adt/selfuncs.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/tsquery_rewrite.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/tsrank.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/tsvector.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/utils/adt/tsvector_op.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/utils/adt/xml.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/cache/catcache.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/cache/inval.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/utils/cache/lsyscache.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/cache/relcache.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 11
+        },
+        {
+          "path": "src/backend/utils/cache/typcache.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 7
+        },
+        {
+          "path": "src/backend/utils/misc/conffiles.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/misc/tzparser.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/sort/logtape.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/utils/sort/tuplesort.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/utils/sort/tuplesortvariants.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 9
+        },
+        {
+          "path": "src/backend/utils/sort/tuplestore.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 5
+        },
+        {
+          "path": "src/backend/utils/time/combocid.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/time/snapmgr.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/common/blkreftable.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 9
+        },
+        {
+          "path": "src/common/rmtree.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/lib/simplehash.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/pl/plpgsql/src/pl_comp.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/pl/plpgsql/src/pl_gram.y",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/pl/plpython/plpy_cursorobject.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/pl/plpython/plpy_exec.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/pl/plpython/plpy_procedure.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/pl/plpython/plpy_spi.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/modules/plsample/plsample.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_aio/test_aio.c",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/test/modules/test_binaryheap/test_binaryheap.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_integerset/test_integerset.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_radixtree/test_radixtree.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_rbtree/test_rbtree.c",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/test/modules/test_regex/test_regex.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 5
+        },
+        {
+          "path": "src/test/modules/test_resowner/test_resowner_basic.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/modules/test_resowner/test_resowner_many.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/modules/test_saslprep/test_saslprep.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_tidstore/test_tidstore.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "src/test/regress/regress.c",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть adt, нет expected/*.out"
+    },
+    {
+      "sha": "5f14f82280db4b0e49d774362854c9d362106484",
+      "base_sha": "e615da8cb21b3745456da45197fa5dc620f19dab",
+      "subject": "Fix for loop variables used with lengthof",
+      "body": "lengthof returns type size_t, but most for loops used int as a loop\nvariable.  Fix that.  This avoids possible warnings about\nsigned/unsigned mismatches under higher warning levels.  (The compiler\nwill likely optimize these loops beyond recognition, so this shouldn't\naffect the generated code much.)\n\nReviewed-by: Tom Lane <tgl@sss.pgh.pa.us>\nDiscussion: https://www.postgresql.org/message-id/flat/d",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "contrib/dblink/dblink.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/access/heap/heapam.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/access/transam/parallel.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/bootstrap/bootstrap.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/catalog/objectaddress.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 8
+        },
+        {
+          "path": "src/backend/commands/typecmds.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/main/main.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/postmaster/bgworker.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/postmaster/datachecksum_state.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/replication/logical/conflict.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/utils/adt/amutils.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/utils/adt/jsonb.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/adt/jsonpath_exec.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/utils/mb/conversion_procs/utf8_and_iso8859/utf8_and_iso8859.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/utils/mb/conversion_procs/utf8_and_win/utf8_and_win.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/bin/initdb/initdb.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/bin/pg_dump/pg_dump.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/bin/pgbench/pgbench.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 12
+        },
+        {
+          "path": "src/bin/psql/command.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/bin/psql/tab-complete.in.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/unicode_norm.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/interfaces/libpq/fe-auth.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/interfaces/libpq/fe-connect.c",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 9
+        },
+        {
+          "path": "src/pl/plpgsql/src/pl_scanner.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/port/pg_localeconv_r.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/port/win32error.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/port/win32ntdll.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/oauth_validator/validator.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_escape/test_escape.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/modules/test_integerset/test_integerset.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/modules/test_radixtree/test_radixtree.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/regress.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/timezone/zic.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть adt, нет expected/*.out"
+    },
+    {
+      "sha": "2c6f2c5e1778e243f5300ec45d0f4b0be15e6325",
+      "base_sha": "4e277b424a5312cdee468d92078a5359f3e7d4e7",
+      "subject": "Revert \"JSON_TABLE: propagate table-level ON ERROR to columns per SQL standard\"",
+      "body": "This reverts commit e73841ffbceea314cf9fa3f64a5eae9f87a46449.  Due to\npg_dump/pg_restore problem and related pg_upgrade problem.\n\nReported-by: Jeff Davis <pgsql@j-davis.com>\nReported-by: Robert Haas <robertmhaas@gmail.com>\nDiscussion: https://postgr.es/m/d048d3c10964ed984f949f649f194061501e2317.camel%40j-davis.com\nDiscussion: https://postgr.es/m/CA%2BTgmoaT9LYxg2%2B4fYh8in0zguHcwyUhN_cFOS-6TCH1-2_",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "doc/src/sgml/func/func-json.sgml",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 12
+        },
+        {
+          "path": "src/backend/parser/parse_jsontable.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 23
+        },
+        {
+          "path": "src/test/regress/expected/sqljson_jsontable.out",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 21
+        },
+        {
+          "path": "src/test/regress/sql/sqljson_jsontable.sql",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 12
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "сообщение начинается с Revert"
+    },
+    {
+      "sha": "a4b26b8f7cd07a3e7f0cba550c30db142329e065",
+      "base_sha": "f292187f375738ee8e921ab6bd3fa011e2cc2813",
+      "subject": "Revert UPDATE/DELETE FOR PORTION OF",
+      "body": "List of commits reverted:\n\n  8e72d914c52  Add UPDATE/DELETE FOR PORTION OF\n  b6ccd30d8ff  Add isolation tests for UPDATE/DELETE FOR PORTION OF\n  33db6c4baf1  Fix DELETE/UPDATE FOR PORTION OF with rules\n  7b22f15a015  Add psql tab completion for FOR PORTION OF clause\n  7ca8c942967  Fix FOR PORTION OF with non-updatable view columns\n  993a7aa0e4a  Fix cross-leftover pollution in FOR PORTION OF inser",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "contrib/postgres_fdw/expected/postgres_fdw.out",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 80
+        },
+        {
+          "path": "contrib/postgres_fdw/sql/postgres_fdw.sql",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 58
+        },
+        {
+          "path": "contrib/test_decoding/expected/ddl.out",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 52
+        },
+        {
+          "path": "contrib/test_decoding/sql/ddl.sql",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 30
+        },
+        {
+          "path": "doc/src/sgml/ddl.sgml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "doc/src/sgml/dml.sgml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 173
+        },
+        {
+          "path": "doc/src/sgml/glossary.sgml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 15
+        },
+        {
+          "path": "doc/src/sgml/images/Makefile",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 4
+        },
+        {
+          "path": "doc/src/sgml/images/meson.build",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 3
+        },
+        {
+          "path": "doc/src/sgml/images/temporal-delete.svg",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 41
+        },
+        {
+          "path": "doc/src/sgml/images/temporal-delete.txt",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 10
+        },
+        {
+          "path": "doc/src/sgml/images/temporal-isolation.svg",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 47
+        },
+        {
+          "path": "doc/src/sgml/images/temporal-isolation.txt",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 44
+        },
+        {
+          "path": "doc/src/sgml/images/temporal-update.svg",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 45
+        },
+        {
+          "path": "doc/src/sgml/images/temporal-update.txt",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 10
+        },
+        {
+          "path": "doc/src/sgml/ref/create_policy.sgml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 32
+        },
+        {
+          "path": "doc/src/sgml/ref/create_publication.sgml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 6
+        },
+        {
+          "path": "doc/src/sgml/ref/create_view.sgml",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 12
+        },
+        {
+          "path": "doc/src/sgml/ref/delete.sgml",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 110
+        },
+        {
+          "path": "doc/src/sgml/ref/update.sgml",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 114
+        },
+        {
+          "path": "doc/src/sgml/trigger.sgml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 12
+        },
+        {
+          "path": "src/backend/commands/copyfrom.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/executor/execMain.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 11
+        },
+        {
+          "path": "src/backend/executor/execPartition.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 18
+        },
+        {
+          "path": "src/backend/executor/nodeModifyTable.c",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 454
+        },
+        {
+          "path": "src/backend/nodes/nodeFuncs.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 37
+        },
+        {
+          "path": "src/backend/optimizer/plan/createplan.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/optimizer/plan/planner.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 41
+        },
+        {
+          "path": "src/backend/optimizer/util/pathnode.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/backend/parser/analyze.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 357
+        },
+        {
+          "path": "src/backend/parser/gram.y",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 105
+        },
+        {
+          "path": "src/backend/parser/parse_agg.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 10
+        },
+        {
+          "path": "src/backend/parser/parse_collate.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/parser/parse_expr.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 8
+        },
+        {
+          "path": "src/backend/parser/parse_func.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 3
+        },
+        {
+          "path": "src/backend/parser/parse_merge.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/backend/rewrite/rewriteHandler.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 136
+        },
+        {
+          "path": "src/backend/rewrite/rowsecurity.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 25
+        },
+        {
+          "path": "src/backend/utils/adt/ruleutils.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 48
+        },
+        {
+          "path": "src/backend/utils/cache/lsyscache.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 25
+        },
+        {
+          "path": "src/bin/psql/t/010_tab_completion.pl",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 39
+        },
+        {
+          "path": "src/bin/psql/tab-complete.in.c",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 27
+        },
+        {
+          "path": "src/include/catalog/catversion.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/executor/executor.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/nodes/execnodes.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 22
+        },
+        {
+          "path": "src/include/nodes/parsenodes.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 21
+        },
+        {
+          "path": "src/include/nodes/pathnodes.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/nodes/plannodes.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/nodes/primnodes.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 34
+        },
+        {
+          "path": "src/include/optimizer/pathnode.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/parser/analyze.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/parser/kwlist.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/parser/parse_node.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/utils/lsyscache.h",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/isolation/expected/for-portion-of.out",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 4089
+        },
+        {
+          "path": "src/test/isolation/isolation_schedule",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/isolation/specs/for-portion-of.spec",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 597
+        },
+        {
+          "path": "src/test/regress/expected/for_portion_of.out",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2987
+        },
+        {
+          "path": "src/test/regress/expected/privileges.out",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 38
+        },
+        {
+          "path": "src/test/regress/expected/rowsecurity.out",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 38
+        },
+        {
+          "path": "src/test/regress/expected/updatable_views.out",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 218
+        },
+        {
+          "path": "src/test/regress/expected/without_overlaps.out",
+          "status": "modified",
+          "additions": 43,
+          "deletions": 202
+        },
+        {
+          "path": "src/test/regress/parallel_schedule",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/sql/for_portion_of.sql",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1967
+        },
+        {
+          "path": "src/test/regress/sql/privileges.sql",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 35
+        },
+        {
+          "path": "src/test/regress/sql/rowsecurity.sql",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 32
+        },
+        {
+          "path": "src/test/regress/sql/updatable_views.sql",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 160
+        },
+        {
+          "path": "src/test/regress/sql/without_overlaps.sql",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 107
+        },
+        {
+          "path": "src/test/subscription/t/034_temporal.pl",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 94
+        },
+        {
+          "path": "src/tools/pgindent/typedefs.list",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 3
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "сообщение начинается с Revert"
+    },
+    {
+      "sha": "142fd8ff13dee8ff6665615027386908e9768d43",
+      "base_sha": "f197fdee8265050bfefb2f5d00829a814ff05ae4",
+      "subject": "Fix import of statistics for domains over [multi]range types and tsvector",
+      "body": "pg_restore_attribute_stats() rejected range_length_histogram,\nrange_empty_frac and range_bounds_histogram for a column whose type is a\ndomain over a range or a multirange type.  The same issue existed for\nmost_common_elems and elem_count_histogram for a domain over tsvector.\npg_restore_extended_stats() had the same set of problems for expressions\nwhose type is a domain over a range, a multirange t",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/statistics/attribute_stats.c",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 13
+        },
+        {
+          "path": "src/backend/statistics/extended_stats_funcs.c",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 17
+        },
+        {
+          "path": "src/backend/statistics/stat_utils.c",
+          "status": "modified",
+          "additions": 50,
+          "deletions": 14
+        },
+        {
+          "path": "src/include/statistics/stat_utils.h",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 2
+        },
+        {
+          "path": "src/test/regress/expected/stats_import.out",
+          "status": "modified",
+          "additions": 331,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/sql/stats_import.sql",
+          "status": "modified",
+          "additions": 251,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "регресс без src/backend/utils/adt"
+    },
+    {
+      "sha": "4a2f5533f3ceb20727686ed5ef38107d6b295e33",
+      "base_sha": "374522aa63af1187c15dd21db0b2c988b55c9a3a",
+      "subject": "Correct on-access VM setting heuristic",
+      "body": "The heuristic to avoid setting the VM during on-access pruning when\ndoing so would emit an extra FPI missed a few cases. First it missed\ntemp and unlogged tables. Those will never emit an FPI, so they can\nalways set the VM if the page is all-visible. It also missed that if\nhint bits are not WAL-logged, setting only the VM passes REGBUF_NO_IMAGE\nfor an already WAL-logged heap page, forbidding a hea",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "contrib/pg_visibility/expected/pg_visibility.out",
+          "status": "modified",
+          "additions": 78,
+          "deletions": 0
+        },
+        {
+          "path": "contrib/pg_visibility/sql/pg_visibility.sql",
+          "status": "modified",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "path": "src/backend/access/heap/pruneheap.c",
+          "status": "modified",
+          "additions": 30,
+          "deletions": 7
+        },
+        {
+          "path": "src/test/regress/expected/temp.out",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/test/regress/sql/temp.sql",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "регресс без src/backend/utils/adt"
+    },
+    {
+      "sha": "374522aa63af1187c15dd21db0b2c988b55c9a3a",
+      "base_sha": "cff329240bae6416f7e3574c7996cdd710a9674c",
+      "subject": "Fix incorrect block accounting in TID Range Scans",
+      "body": "heapgettup_advance_block() (or heapgettup() and heapgettup_pagemode() in\nversions before v16) would incorrectly decrement rs_numblocks when\nadvancing to the next block.  Ordinarily this was fine, but if the TID\nRange scan plan was used by a scrollable cursor and the cursor was fetched\nbackwards enough to result in another block being required, then\nrs_numblocks may have reached 0 prematurely resul",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/backend/access/heap/heapam.c",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 9
+        },
+        {
+          "path": "src/test/regress/expected/tidrangescan.out",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 0
+        },
+        {
+          "path": "src/test/regress/sql/tidrangescan.sql",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "регресс без src/backend/utils/adt"
+    },
+    {
+      "sha": "9e17d25e79d4756be08b4a5521b4b58450217137",
+      "base_sha": "e73841ffbceea314cf9fa3f64a5eae9f87a46449",
+      "subject": "Attempt to fix test interference from foreign_key opfamily test",
+      "body": "The test added by c62b330912e creates a btree opfamily whose members\ninclude built-in integer operators, which get_mergejoin_opfamilies()\nfinds regardless of schema.  So any concurrently running test that\nplanned an integer join or sort could pick the family up while it\nexisted.  That's the likely cause of the intermittent plan-shape\nchanges seen in window.sql and equivclass.sql on the buildfarm a",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/test/regress/expected/foreign_key.out",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 8
+        },
+        {
+          "path": "src/test/regress/sql/foreign_key.sql",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 8
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "только регресс, нет adt"
+    },
+    {
+      "sha": "e73841ffbceea314cf9fa3f64a5eae9f87a46449",
+      "base_sha": "a8bb1a77795bab6e1304efa5c5dabee797b6887e",
+      "subject": "JSON_TABLE: propagate table-level ON ERROR to columns per SQL standard",
+      "body": "Per ISO/IEC 9075-2:2023, 7.11 <JSON table>, Syntax Rules 1)e)iv) and\n1)f)xi), a regular or formatted JSON_TABLE column that does not specify\nits own ON ERROR clause takes its default error behavior from the\ntable-level ON ERROR clause: with ERROR ON ERROR on the table, the\ncolumn behaves as ERROR ON ERROR; otherwise the column defaults to\nNULL ON ERROR.\n\nPostgreSQL instead always defaulted such co",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "doc/src/sgml/func/func-json.sgml",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 4
+        },
+        {
+          "path": "src/backend/parser/parse_jsontable.c",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 6
+        },
+        {
+          "path": "src/test/regress/expected/sqljson_jsontable.out",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 7
+        },
+        {
+          "path": "src/test/regress/sql/sqljson_jsontable.sql",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 5
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "парсер и регресс, нет adt"
+    },
+    {
+      "sha": "7a0aa99e51c7a3263e6ee45f19f270ddae430a92",
+      "base_sha": "704ef84ef232e02e241071b2faf0541d155c6b62",
+      "subject": "Revert \"Use -isystem for LLVM include directories\"",
+      "body": "This reverts commit 704ef84ef232e02e241071b2faf0541d155c6b62.\n\nThe configure solution in that commit doesn't work if llvm-config\nreturns a system directory such as /usr/include.  The resulting\n-isystem /usr/include puts the C headers before the C++ headers in the\ninclude file order, which is not supposed to be done and causes\nfailures.  (Using -I /usr/include doesn't have that problem because it\ni",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "config/llvm.m4",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 5
+        },
+        {
+          "path": "configure",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 5
+        },
+        {
+          "path": "meson.build",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 4
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "сообщение начинается с Revert"
+    }
+  ]
+}

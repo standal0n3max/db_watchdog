@@ -26,7 +26,7 @@ from db_pipeline.stages import (
     tags=["sqlite"],
 )
 def sqlite_pipeline() -> None:
-    """Сбор одного экземпляра SQLite по закреплённому sha."""
+    """Закреплённый проход SQLite по sha из repos.toml. Обход истории — команда --harvest."""
 
     @task
     def watchRepos() -> StageResult:

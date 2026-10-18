@@ -1,0 +1,791 @@
+{
+  "description": "Ручная разметка 20 коммитов sqlite до прогона SQL-фильтра. Метки expected не менять.",
+  "changes": [
+    {
+      "sha": "3bce1260e7ef31b6b7bdde9d3781eb1264d68f37",
+      "base_sha": "94852686fec2ebcb353ad65aedc90443af2aae48",
+      "subject": "Fix 24:00:00 rounding of dates with negative years. [forum:/info/2026-10-17T12:57:32Z|Forum post 2026-10-17T12:57:32Z]",
+      "body": "FossilOrigin-Name: 91515aa82e05f32db4b5d126d762d730cf424735edc4ef59a696ad581f4ca1ab",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/date.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "test/date.test",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/date.c и test/date.test"
+    },
+    {
+      "sha": "88c7cc0a27b338b17b011edf16a21b3e97f66899",
+      "base_sha": "c3e073420ff9e35ea80c783e3664e32449b5b703",
+      "subject": "Fix a problem handling zero-length strings in some cases in group_concat() when it is used as a window function. Report [bugs:/info/2026-10-16T15:51:51Z | 2026-10-16T15:51:51Z].",
+      "body": "FossilOrigin-Name: 2f794cf18ac9e55a9a05349187d4322e160c99f9c6068aaf33d190cda929bc82",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/func.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/windowE.test",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/func.c и test/*.test"
+    },
+    {
+      "sha": "848cad0ec0b9008690af0b3e95b95814875a8c27",
+      "base_sha": "14913b9e281d8fad7ec6a3e76e3d59c411caa06e",
+      "subject": "Deal with harmless 32-bit integer overflow on parameters to some extension SQL functions. [bugs:/info/2026-10-15T04:34:08Z|Bug 2026-10-15T04:34:08Z]",
+      "body": "FossilOrigin-Name: ca52702835d16afd04e936bc4d57f78f0c4d37f83b19b632122f6a699009ca3c",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "ext/misc/decimal.c",
+          "status": "modified",
+          "additions": 38,
+          "deletions": 5
+        },
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 10
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/func.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 3
+        },
+        {
+          "path": "src/shell.c.in",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 3
+        },
+        {
+          "path": "test/overflow1.sql",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 0
+        },
+        {
+          "path": "test/shellB.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/func.c и test/*.test"
+    },
+    {
+      "sha": "4b495f91a98381444a4688dcfdc6582e09ee9e56",
+      "base_sha": "9da2d2374ab6053b4608608ff4ea1a1ea1998be7",
+      "subject": "In date/time functions, the hour can be 24 as long as the minutes and seconds are zero. [bugs:/info/2026-09-23T02:44:48Z|Bug 2026-09-23T02:44:48Z]",
+      "body": "FossilOrigin-Name: 52eec02592f9d0d2d4282c20cc0872215c8d88e17f1a3e34d2ccab48119f7c42",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/date.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "test/date.test",
+          "status": "modified",
+          "additions": 24,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/date.c и test/date.test"
+    },
+    {
+      "sha": "93d6a90fe9837e34ca74328c8ce9ffec7969323c",
+      "base_sha": "30fbf300af101e53c034001877d9d5cbf7c6eb42",
+      "subject": "Adjustments to the substr() function so that it can accommodate ridiculous values for the second argument. [bugs:/info/2026-09-20T18:42:27Z|Bug 2026-09-20T18:42:27Z]",
+      "body": "FossilOrigin-Name: aadf42e021fc55d457836c7cda68f3d22dcaae72a7bbc105c3c727b3eb5c4657",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/func.c",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/substr.test",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/func.c и test/substr.test"
+    },
+    {
+      "sha": "ebdbae7d9d783d5552da5c009e6df11e13a9c456",
+      "base_sha": "f4cf5c9b5d48c524be502ee4bfdd06b40af5b278",
+      "subject": "Enhancements to date/time functions:  The \"weekday -N\" modifier moves the date backward in time.  The \"end of day/month/year\" modifiers added.",
+      "body": "FossilOrigin-Name: 88901fffcd445ccb97e4e379ea15d8b06d87b8170cad0f717c909944ff21851f",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/date.c",
+          "status": "modified",
+          "additions": 61,
+          "deletions": 8
+        },
+        {
+          "path": "test/date.test",
+          "status": "modified",
+          "additions": 71,
+          "deletions": 13
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/date.c и test/date.test, два родителя, заголовок не Merge"
+    },
+    {
+      "sha": "c2d29194a82a7a8cb7e869838ccfd62bd9b3064d",
+      "base_sha": "61523e22f9556db003f075ce44f815717596226b",
+      "subject": "Use tail recursion on the larger of the two partitions when doing a quicksort as part of the implementation of the median() function, to avoid excess stack usage on pathological inputs. [bugs:/info/2026-06-03T07:26:42Z|Bug 2026-06-03T07:26:42Z].",
+      "body": "FossilOrigin-Name: 7dc987165c030c260ba90a8878291b5ceb037c48c2f437a8fb3f05b6c4f84fde",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "ext/misc/percentile.c",
+          "status": "modified",
+          "additions": 35,
+          "deletions": 35
+        },
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/func.c",
+          "status": "modified",
+          "additions": 35,
+          "deletions": 36
+        },
+        {
+          "path": "test/percentile.test",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/func.c и test/percentile.test"
+    },
+    {
+      "sha": "f77a5af2b38656bb084521dea3c2bd40f9296ebc",
+      "base_sha": "6df919b7230f9d6ed6a1bb90b1989b5b0fe9c69e",
+      "subject": "Fix the new %J and %j formats so they work correctly with a zero precision.",
+      "body": "FossilOrigin-Name: 428b924dd6e228c879338c5c5edbe68bdc4d8d8e80c37e3d070a8a34b57300c1",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/printf.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "test/printf.test",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/printf.c и test/printf.test"
+    },
+    {
+      "sha": "397a3c4a047efbc6175827187e9b25b542710566",
+      "base_sha": "0c3b3f93d17a57cfd4622f0afc2525caf73d4c51",
+      "subject": "Have window functions sum(), total() and avg() correctly handle the obscure case where integer overflow occurs as part of the same step that adds the first real value to the running total.",
+      "body": "FossilOrigin-Name: 614f8cbc374c7a2d39826706f16ab1c17e75abb420a70be356c7eefa95b271a5",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/func.c",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 4
+        },
+        {
+          "path": "test/windowE.test",
+          "status": "modified",
+          "additions": 58,
+          "deletions": 1
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/func.c и test/windowE.test"
+    },
+    {
+      "sha": "d4c4e91674862650014e605d8a082146b8572003",
+      "base_sha": "8ff6523afd103ff42e0365bc465d9a630bf17150",
+      "subject": "Add the %J and %j conversions to printf() - rendering JSON string literals.",
+      "body": "FossilOrigin-Name: 7e6fd838a15f08bf15d57f1887ed1019b58aa6be9eb7b162e67e0d9412082c6d",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/printf.c",
+          "status": "modified",
+          "additions": 117,
+          "deletions": 32
+        },
+        {
+          "path": "test/printf.test",
+          "status": "modified",
+          "additions": 84,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "src/printf.c и test/printf.test"
+    },
+    {
+      "sha": "d76e14d85ee6688763c9e91ab95bfe33652b1684",
+      "base_sha": "265bd6339f92218add70af690529b230cf9b34ec",
+      "subject": "Add comments to help remind developers to keep the table of optimization disable bit values in sync with the CLI and with TH3.",
+      "body": "FossilOrigin-Name: 0e707e7dba7edadda9951549ae3aa34b713a0f2210ccc486e181e833c74e2fa6",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/shell.c.in",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/sqliteInt.h",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "комментарии в shell, нет SQL-файлов"
+    },
+    {
+      "sha": "265bd6339f92218add70af690529b230cf9b34ec",
+      "base_sha": "fc96a3c4530bbc66274133d3727a556821dddce6",
+      "subject": "The code for sqlite3_analyzer is still in the tree, and you can still build it using \"make sqlite3_analyzer\" but it does not get built as part of \"make tool-zip\" and there is no mention of it in the README files and similar.",
+      "body": "FossilOrigin-Name: 77278079d9dddaff30a1862bf412329e91242a41be7eafc19d3fac8d872adeff",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "LICENSE.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "Makefile.msc",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "README.md",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "doc/compile-for-unix.md",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "doc/compile-for-windows.md",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 42
+        },
+        {
+          "path": "main.mk",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 5
+        },
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 14
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/analyzer1.test",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 55
+        },
+        {
+          "path": "tool/mktoolzip.tcl",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "тест анализатора без src/func.c, date.c, printf.c"
+    },
+    {
+      "sha": "fc96a3c4530bbc66274133d3727a556821dddce6",
+      "base_sha": "6e55a61a68cf58544ef294f218be65fb4310c654",
+      "subject": "Add the tree-tracker optimization.",
+      "body": "FossilOrigin-Name: e24a8fe9867370bf9766638ff2337ec7a448d5c8995ca6ceed9024e43ccb957d",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 13
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/expr.c",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/shell.c.in",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/sqliteInt.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 3
+        },
+        {
+          "path": "src/vdbe.c",
+          "status": "modified",
+          "additions": 30,
+          "deletions": 3
+        },
+        {
+          "path": "src/where.c",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "path": "src/whereInt.h",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/wherecode.c",
+          "status": "modified",
+          "additions": 126,
+          "deletions": 10
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "правка планировщика без SQL-файлов"
+    },
+    {
+      "sha": "6e55a61a68cf58544ef294f218be65fb4310c654",
+      "base_sha": "95a64c65286ba8c47e181477f6795c21f72fcb06",
+      "subject": "Fix some problems with handling corrupt meta-value arrays in vec1.",
+      "body": "FossilOrigin-Name: fa41e6201609f40ce9d6ec28693e4cd143363a78f072476586f6de7fd90aed66",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "ext/vec1/test/vec1corrupt.test",
+          "status": "modified",
+          "additions": 438,
+          "deletions": 1
+        },
+        {
+          "path": "ext/vec1/vec1.c",
+          "status": "modified",
+          "additions": 110,
+          "deletions": 44
+        },
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 8
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "расширение vec1"
+    },
+    {
+      "sha": "95a64c65286ba8c47e181477f6795c21f72fcb06",
+      "base_sha": "6932c59ee5c280599dfae9e7b431698a7cab9687",
+      "subject": "Bump the version number to 3.55 to begin the next development cycle.",
+      "body": "FossilOrigin-Name: 0dc7d0aaf5bacf17095a0ae7d4739458eb2c9cbaf049294589449b8787e6c48c",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "VERSION",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 9
+        },
+        {
+          "path": "manifest.tags",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 3
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "только номер версии"
+    },
+    {
+      "sha": "6932c59ee5c280599dfae9e7b431698a7cab9687",
+      "base_sha": "039ef9acc90b337e371a6274683e24c15b6d5982",
+      "subject": "Version 3.54.0",
+      "body": "FossilOrigin-Name: be8d059e9a49089ab2dce5ed26dd87aaf598fdc5fbe0b107c0dd758464bcd5e3",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 4
+        },
+        {
+          "path": "manifest.tags",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "только номер версии"
+    },
+    {
+      "sha": "039ef9acc90b337e371a6274683e24c15b6d5982",
+      "base_sha": "0e62f142b77af9a4c7701559be9bf3612988fa38",
+      "subject": "Fix a typo in a comment.  No changes to code.",
+      "body": "FossilOrigin-Name: 7b468f6f1d63645c8d8132790831dac6916006f81cf97e99abec711de93feb23",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/sqlite.h.in",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "опечатка в комментарии"
+    },
+    {
+      "sha": "0e62f142b77af9a4c7701559be9bf3612988fa38",
+      "base_sha": "fdc06f3643cd450804f12cda637e54754b083da4",
+      "subject": "In the CLI, add comments to internal SQL functions making it clear that those functions are subject to change and removal at any time, lest people come to depend on them.  No changes to code.",
+      "body": "FossilOrigin-Name: a3332bd623d997921c3186433cd1eab0c9413aa0f68d93b1731cf80128ec3a36",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/shell.c.in",
+          "status": "modified",
+          "additions": 30,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "комментарии CLI"
+    },
+    {
+      "sha": "bfb858c596f617c7ae74fd74672fae0d101a1588",
+      "base_sha": "d0fe192fa13a59a5fa6365c8e03d8f3b3d944851",
+      "subject": "Ensure the join flags on the parent are set correctly when flattening UNION ALL sub-queries that include branches with RIGHT joins. Report [bugs:/info/2026-10-08T15:27:33Z | 2026-10-08T15:27:33Z].",
+      "body": "FossilOrigin-Name: cfa69ea48a7aa379ee0c30ae81d2802da862d610f829c933e5eb358c23fc2b9d",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 8
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/select.c",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "test/unionall2.test",
+          "status": "modified",
+          "additions": 61,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "select.c и test, нет func.c, date.c, printf.c"
+    },
+    {
+      "sha": "d0fe192fa13a59a5fa6365c8e03d8f3b3d944851",
+      "base_sha": "f19a90c56977df9e8d85e6b162c684f5bdd89467",
+      "subject": "Disable the \"expr IN (const)\" to \"expr=const\" optimization of \"const\" has a COLLATE clause, as using the collating on \"=\" would give the wrong answer. [bugs:/info/2026-10-08T12:36:41Z|Bugs 2026-10-08T12:36:41Z]",
+      "body": "FossilOrigin-Name: 53a73aa03d05350ebee81c3d2aef85744c8ebeda72f565083dc4b472b57c5499",
+      "parent_count": 1,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "manifest",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "manifest.uuid",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parse.y",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "parse.y без SQL-файлов"
+    }
+  ]
+}

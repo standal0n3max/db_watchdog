@@ -1,0 +1,5969 @@
+{
+  "description": "Ручная разметка 20 коммитов duckdb до прогона SQL-фильтра. Метки expected не менять.",
+  "changes": [
+    {
+      "sha": "2666f35707b758621f7b4e6e9694be35b41c10b5",
+      "base_sha": "638b09261a334feb2f7deb742fe3996db3c974b1",
+      "subject": "Fix yearweek filters for dates before ISO year 1 (#26790)",
+      "body": "Fixes #26789\n\n## Summary\n\n`yearweek` filters can return the wrong rows when a column range\nincludes ISO year 0 or a negative ISO year. On 800 dates starting at\n`DATE '-00043-01-01'`, `yearweek(d) >= -4310` returns 800 instead of\n506, and `yearweek(d) < -4310` returns 0 instead of 294. A timestamp\nrange that stays inside one negative ISO year is inverted the other way:\n`yearweek(ts) >= -4310` retur",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/date/date_part.cpp",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 3
+        },
+        {
+          "path": "extension/icu/icu-datepart.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/optimizer/yearweek_negative_iso_year.test",
+          "status": "modified",
+          "additions": 113,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка core_functions и test/sql"
+    },
+    {
+      "sha": "25f854d5dd4b02e7a9049d3925a97699fe7d5b7f",
+      "base_sha": "5a06879d94422fd04dd9173300445491f12f9d1f",
+      "subject": "Fix captured column selection in list_reduce (#25817)",
+      "body": "With a constant initial value, `list_reduce` can read captured column\nvalues from another row when the input lists have different lengths. For\nexample, `lambda acc, x: acc + x + v` with initial value `0` returns\n`11, 43` for `([1], 10), ([1, 2], 30)` instead of `11, 63`. A filtered\ninput can also fail with an INTERNAL Error.\n\nUse `initial_offset + i` for the vector type check, matching the index\na",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/list/list_reduce.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/function/list/lambdas/reduce_captured_columns.test",
+          "status": "modified",
+          "additions": 72,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка core_functions и test/sql"
+    },
+    {
+      "sha": "84742e9260cda6c2dce7ba222617171312e482e0",
+      "base_sha": "b82f19b24e1a8217109af2c406e7ff54058d97e2",
+      "subject": "Fix: Do not produce invalid UTF8 from printf's %c conversion (#25189)",
+      "body": "Fixes #25166\n\n`printf('%c', 255)` writes the raw byte `0xFF` into a VARCHAR, which\nisn't valid UTF-8.\nEverything downstream then falls on a string that was already corrupt\nbefore it got there:\n\n```sql\nSELECT lower(printf('%c', 255));         -- INTERNAL Error: invalid lead byte\nSELECT trim(printf('%c', 255));          -- INTERNAL Error: string of size 18446744073709551613\nSELECT strip_accents(prin",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/string/printf.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/function/string/test_printf.test",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка printf и test/sql"
+    },
+    {
+      "sha": "a9e701449e46ad9dbc9006518a1328ecd2948d79",
+      "base_sha": "7f3e74d011f0f30a91b18e1929abf383e2d4f535",
+      "subject": "Fix `round` overflow (#25125)",
+      "body": "Closes https://github.com/duckdb/duckdb/issues/25124\n\nThe way we get rounded value is,`(input ± power/2) / power * power`,\nwhich has a few places which suffer overflow;\n(1) adding half of the power could overflow; (2) multiply by the power\ncould also overflow.\n\nIn this PR, I propose two changes\n- Use `HUGEINT` to take intermediate results, so smaller range types\n(i.e., `SMALLINT`) don't overflow i",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/math/numeric.cpp",
+          "status": "modified",
+          "additions": 35,
+          "deletions": 20
+        },
+        {
+          "path": "test/sql/function/numeric/test_round_integers.test",
+          "status": "modified",
+          "additions": 67,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка numeric и test/sql"
+    },
+    {
+      "sha": "a46abc251201529eb59e0632ae7379bcba372dbe",
+      "base_sha": "e0b375a9a0d52c40803e989ca030d05c99d56299",
+      "subject": "Propagate stats for sum aggregation function (#25146)",
+      "body": "Hi team, I found current implementation doesn't propagate stats for\n`sum` aggregates; for example\n```sql\nmemory D CREATE TABLE t AS SELECT range::INTEGER AS x FROM range(10000);\nmemory D EXPLAIN SELECT sum(x) FROM t HAVING sum(x) < 0;\n╭─ Filter ────────────────────────╮\n│ Expression: sum(x) < 0          │\n│ ~0 rows                         │\n╰────────────────┬────────────────╯\n╭─ Ungrouped Aggregat",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/aggregate/distributive/sum.cpp",
+          "status": "modified",
+          "additions": 61,
+          "deletions": 29
+        },
+        {
+          "path": "test/configs/verify_aggregate_state_export.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/aggregate_reuse.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/optimizer/sum_aggregate_stats_propagation.test",
+          "status": "modified",
+          "additions": 170,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка sum и test/sql"
+    },
+    {
+      "sha": "721479585fb6d907866d52587592c6458298916d",
+      "base_sha": "3e994341644dbd9e50adb23f496b8aba7ba6e088",
+      "subject": "Implement date time row group pruning (#24943)",
+      "body": "Hi team, I found in the date time related queries, not all the row\ngroups are pruned as expected. For example,\n```sql\nmemory D ATTACH 'prune_demo.duckdb' AS db (ROW_GROUP_SIZE 2048);\nmemory D USE db;\n\n-- 6144 rows = 3 row groups; the months covered by each row group:\n-- row group 0: [Jan, Feb], row group 1: [May, Jun], row group 2: [Sep, Oct]\ndb D CREATE TABLE dt AS\n         SELECT DATE '2024-01-0",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/date/date_part.cpp",
+          "status": "modified",
+          "additions": 126,
+          "deletions": 11
+        },
+        {
+          "path": "test/sql/function/time/test_extract_stats.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/optimizer/date_part_row_group_pruning.test",
+          "status": "modified",
+          "additions": 374,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка date_part и test/sql"
+    },
+    {
+      "sha": "c949e7ae0accd78e9731d3042d38b215575ebad8",
+      "base_sha": "8c4d17a0d81f376a10bf2db9e7054e1a7626fa35",
+      "subject": "Propagate stats for `left` function to prune row group (#24951)",
+      "body": "Hi team, I found `left` function doesn't prune row group as expected,\nfor example\n```sql\nmemory D ATTACH '/tmp/left_zonemap_pruning.duckdb' AS db (ROW_GROUP_SIZE 2048);\nmemory D USE db;\n-- RG1 → ['0000', '0020'], RG2 → ['0020', '0040'], RG3 → ['0040', '0061']\ndb D CREATE TABLE left_pruning AS\n     SELECT i::INTEGER AS i, lpad(i::VARCHAR, 6, '0') AS s\n     FROM range(6144) r(i);\n-- we should only r",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/string/left_right.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/optimizer/left_zonemap_pruning.test",
+          "status": "modified",
+          "additions": 133,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка left_right и test/sql"
+    },
+    {
+      "sha": "a7501a2c32de2dc6c126148f90c4d4c9f33036aa",
+      "base_sha": "94342607abc11b7e12cefd4aabec727b2c02c068",
+      "subject": "Mark `last_day` function fallible (#24974)",
+      "body": "Closes https://github.com/duckdb/duckdb/issues/24973",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/date/date_part.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/function/date/test_date_part.test",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка last_day и test/sql"
+    },
+    {
+      "sha": "6a3a26ffa866fcfccb74bbc1a9780b00a9ba082d",
+      "base_sha": "e3b83ab494b94761932aa66d750e149584b18a02",
+      "subject": "Arena allocate per-group buffers in bitstring_agg, bit_and/bit_or/bit_xor, and mode (#24855)",
+      "body": "`bitstring_agg`, the `bit_and`/`bit_or`/`bit_xor` bitwise aggregates\nover `BIT`, and `mode's` non-inlined string/window state all allocated\nwith raw `new char[]`, so memory_limit couldn't be enforced for these\naggregates. In some circumstances this could kill the process instead of\nfailing gracefully. This mirrors #24125 for TDigest/`APPROX_QUANTILE`:\nthe memory now goes through an arena so it's t",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/aggregate/distributive/bitagg.cpp",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 9
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/bitstring_agg.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 14
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/mode.cpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 36
+        },
+        {
+          "path": "test/configs/verify_aggregate_state_export.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/aggregate/aggregates/bitagg_memory_limit.test",
+          "status": "modified",
+          "additions": 27,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/aggregate/aggregates/bitstring_agg_memory_limit.test",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/window/test_mode_window_varlen.test",
+          "status": "modified",
+          "additions": 42,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка bitagg и test/sql"
+    },
+    {
+      "sha": "8c4d17a0d81f376a10bf2db9e7054e1a7626fa35",
+      "base_sha": "44d8622a70dbb419bc7b03fa0c867a3ff6586f89",
+      "subject": "Prune row group for prefix functions (#24953)",
+      "body": "Hi team, I found prefix doesn't always prune row group as expected, for\nexample,\n```sql\nmemory D ATTACH '/tmp/prefix_zonemap_pruning.duckdb' AS db (ROW_GROUP_SIZE 2048);\nmemory D USE db;\ndb D CREATE TABLE prefix_pruning AS\n     SELECT i::INTEGER AS i, lpad(i::VARCHAR, 6, '0') AS s\n     FROM range(6144) r(i);\n-- no value starts with '00', so no row group should be scanned.\ndb D EXPLAIN ANALYZE SELE",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/string/starts_with.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/string/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/string/prefix.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 80
+        },
+        {
+          "path": "src/function/scalar/string/string_common.cpp",
+          "status": "modified",
+          "additions": 99,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/function/scalar/string_common.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/copy/parquet/parquet_expression_filter_pruning.test",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 3
+        },
+        {
+          "path": "test/sql/optimizer/prefix_zonemap_pruning.test",
+          "status": "modified",
+          "additions": 138,
+          "deletions": 0
+        }
+      ],
+      "expected": "accept",
+      "human_reason": "правка starts_with и test/sql"
+    },
+    {
+      "sha": "8bc48eb3fe36f13b5e57e5e136c3ba85cc7d74d4",
+      "base_sha": "625f75fce87c7b49c0bef7c331bd89a32d1c0d38",
+      "subject": "Merge 2.0 into main (#25679)",
+      "body": "Main CI has been broken for a few days with:\n```\nLoad autocomplete at build/release/repository/ca5ce12b7dd33555f58d81ade0990442cb6eefca/linux_amd64/autocomplete.duckdb_extension\nInvalid Input Error: Failed to load 'build/release/repository/ca5ce12b7dd33555f58d81ade0990442cb6eefca/linux_amd64/autocomplete.duckdb_extension', The file was built specifically for DuckDB version 'ca5ce12b7dd33555f58d81a",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": ".github/config/extensions/aws.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/delta.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/httpfs.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/iceberg.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/mysql_scanner.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/quack.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/sqlite_scanner.cmake",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": ".github/config/extensions/test-utils.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/unity_catalog.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": ".github/config/extensions/vortex.cmake",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": ".github/config/extensions/vss.cmake",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/delta/0003-table-catalog-entry-columns.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 44
+        },
+        {
+          "path": ".github/patches/extensions/delta/0004-columnref-expression-include.patch",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/delta/0004-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 376,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0012-columnref-expression-include.patch",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0012-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 211,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/ducklake/0012-skip-merge-adjacent-max-files-on-musl.patch",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/excel/0009-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/fts/0002-fts-indexing-includes.patch",
+          "status": "modified",
+          "additions": 24,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/iceberg/0001-merge-into-action-pipelines.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 708
+        },
+        {
+          "path": ".github/patches/extensions/iceberg/0002-table-catalog-entry-columns.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 44
+        },
+        {
+          "path": ".github/patches/extensions/iceberg/0003-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 386,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/mysql_scanner/0001-table-catalog-entry-columns.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 49
+        },
+        {
+          "path": ".github/patches/extensions/mysql_scanner/0003-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 105,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/postgres_scanner/0003-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/quack/0002-binder-include.patch",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/quack/0002-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/spatial/0011-catalog-logical-operator-includes.patch",
+          "status": "modified",
+          "additions": 79,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/spatial/0011-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/sqlite_scanner/0002-table-catalog-entry-columns.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 48
+        },
+        {
+          "path": ".github/patches/extensions/sqlsmith/0013-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 62,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/unity_catalog/0001-at-clause-unit-identifier.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 13
+        },
+        {
+          "path": ".github/patches/extensions/unity_catalog/0001-table-function-bind-identifiers.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 44
+        },
+        {
+          "path": ".github/patches/extensions/unity_catalog/0002-get-default-schema-identifier.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 93
+        },
+        {
+          "path": ".github/patches/extensions/unity_catalog/0003-value-optional-trycast.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 20
+        },
+        {
+          "path": ".github/patches/extensions/unity_catalog/0004-get-default-schema-optional.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 30
+        },
+        {
+          "path": ".github/patches/extensions/unity_catalog/0005-table-catalog-entry-columns.patch",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 43
+        },
+        {
+          "path": ".github/patches/extensions/vss/0001-hnsw-catalog-columnref-includes.patch",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 0
+        },
+        {
+          "path": ".github/patches/extensions/vss/0001-literal-constant-expression.patch",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": ".github/workflows/Extensions.yml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 252
+        },
+        {
+          "path": ".github/workflows/Main.yml",
+          "status": "modified",
+          "additions": 223,
+          "deletions": 30
+        },
+        {
+          "path": ".github/workflows/Regression.yml",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 9
+        },
+        {
+          "path": "AGENTS.md",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "api_spec/v2/query_result/query_result.yaml",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 74
+        },
+        {
+          "path": "api_spec/v2/sql_statement/sql_statement.yaml",
+          "status": "modified",
+          "additions": 201,
+          "deletions": 3
+        },
+        {
+          "path": "benchmark/micro/window/mode_variable_400.benchmark",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 15
+        },
+        {
+          "path": "benchmark/micro/window/mode_variable_orderby.benchmark",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "benchmark/micro/window/window_iqr_variable_100.benchmark",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "benchmark/micro/window/window_mad_variable_100.benchmark",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "benchmark/micro/window/window_median_variable_100.benchmark",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "data/csv/nul_field_start.csv",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "path": "extension/autocomplete/autocomplete_extension.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/aggregate/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/aggregate/algebraic/avg.cpp",
+          "status": "modified",
+          "additions": 54,
+          "deletions": 26
+        },
+        {
+          "path": "extension/core_functions/aggregate/algebraic/corr.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/algebraic/covar.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/aggregate/algebraic/stddev.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 9
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/approx_count.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/arg_min_max.cpp",
+          "status": "modified",
+          "additions": 24,
+          "deletions": 19
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/bitagg.cpp",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 16
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/bitstring_agg.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/bool.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/kurtosis.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/product.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/skew.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/string_agg.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/aggregate/distributive/sum.cpp",
+          "status": "modified",
+          "additions": 45,
+          "deletions": 10
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/approx_top_k.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/approximate_quantile.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 6
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/lttb.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/mad.cpp",
+          "status": "modified",
+          "additions": 99,
+          "deletions": 106
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/mode.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 6
+        },
+        {
+          "path": "extension/core_functions/aggregate/holistic/quantile.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 5
+        },
+        {
+          "path": "extension/core_functions/aggregate/nested/binned_histogram.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 10
+        },
+        {
+          "path": "extension/core_functions/aggregate/nested/histogram.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 5
+        },
+        {
+          "path": "extension/core_functions/aggregate/nested/list.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_avg.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_count.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_intercept.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_r2.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_slope.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_sxx_syy.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/aggregate/regression/regr_sxy.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/aggregate/variant/CMakeLists.txt",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/aggregate/variant/functions.json",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/aggregate/variant/variant_group_object.cpp",
+          "status": "modified",
+          "additions": 193,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/function_list.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/include/core_functions/aggregate/quantile_state.hpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 15
+        },
+        {
+          "path": "extension/core_functions/include/core_functions/aggregate/variant_functions.hpp",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/include/core_functions/scalar/array_functions.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/include/core_functions/scalar/blob_functions.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/lambda_functions.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/scalar/array/array_functions.cpp",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 17
+        },
+        {
+          "path": "extension/core_functions/scalar/array/functions.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/bit/bitstring.cpp",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 13
+        },
+        {
+          "path": "extension/core_functions/scalar/blob/base64.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/blob/encode.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 6
+        },
+        {
+          "path": "extension/core_functions/scalar/blob/functions.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/date/age.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/date/date_diff.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 6
+        },
+        {
+          "path": "extension/core_functions/scalar/date/date_part.cpp",
+          "status": "modified",
+          "additions": 114,
+          "deletions": 68
+        },
+        {
+          "path": "extension/core_functions/scalar/date/date_sub.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 6
+        },
+        {
+          "path": "extension/core_functions/scalar/date/date_trunc.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 6
+        },
+        {
+          "path": "extension/core_functions/scalar/date/epoch.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/date/make_date.cpp",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 14
+        },
+        {
+          "path": "extension/core_functions/scalar/date/time_bucket.cpp",
+          "status": "modified",
+          "additions": 41,
+          "deletions": 19
+        },
+        {
+          "path": "extension/core_functions/scalar/date/to_interval.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 9
+        },
+        {
+          "path": "extension/core_functions/scalar/debug/index_key.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/debug/sleep.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/debug/vector_type.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/enum/enum_functions.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 7
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/alias.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/binning.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 15
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/can_implicitly_cast.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/cast_to_type.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/current_setting.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/hash.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/least.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/replace_type.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/stats.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/system_functions.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/generic/type_functions.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/list/array_slice.cpp",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 11
+        },
+        {
+          "path": "extension/core_functions/scalar/list/flatten.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_aggregates.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 7
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_distance.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_filter.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_has_any_or_all.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_reduce.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_sort.cpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 21
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_transform.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/list/range.cpp",
+          "status": "modified",
+          "additions": 33,
+          "deletions": 24
+        },
+        {
+          "path": "extension/core_functions/scalar/map/cardinality.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_entries.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_extract.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_from_entries.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_keys_values.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/map/switch.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 18
+        },
+        {
+          "path": "extension/core_functions/scalar/math/numeric.cpp",
+          "status": "modified",
+          "additions": 216,
+          "deletions": 132
+        },
+        {
+          "path": "extension/core_functions/scalar/operators/bitwise.cpp",
+          "status": "modified",
+          "additions": 36,
+          "deletions": 19
+        },
+        {
+          "path": "extension/core_functions/scalar/random/random.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/random/setseed.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/ascii.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/string/bar.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/string/chr.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/damerau_levenshtein.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/string/format_bytes.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/string/hamming.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/hex.cpp",
+          "status": "modified",
+          "additions": 61,
+          "deletions": 28
+        },
+        {
+          "path": "extension/core_functions/scalar/string/instr.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/jaccard.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/jaro_winkler.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 8
+        },
+        {
+          "path": "extension/core_functions/scalar/string/left_right.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 8
+        },
+        {
+          "path": "extension/core_functions/scalar/string/levenshtein.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/pad.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/string/parse_formatted_bytes.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/parse_path.cpp",
+          "status": "modified",
+          "additions": 42,
+          "deletions": 21
+        },
+        {
+          "path": "extension/core_functions/scalar/string/printf.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/string/repeat.cpp",
+          "status": "modified",
+          "additions": 51,
+          "deletions": 5
+        },
+        {
+          "path": "extension/core_functions/scalar/string/replace.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/string/reverse.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/starts_with.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/string/to_base.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 4
+        },
+        {
+          "path": "extension/core_functions/scalar/string/translate.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/string/trim.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 9
+        },
+        {
+          "path": "extension/core_functions/scalar/string/unicode.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/string/url_encode.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/struct/struct_insert.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/scalar/struct/struct_keys.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/struct/struct_update.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "extension/core_functions/scalar/struct/struct_values.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/union/union_extract.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/union/union_tag.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/core_functions/scalar/union/union_value.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "extension/icu/icu-dateadd.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 3
+        },
+        {
+          "path": "extension/icu/icu-datepart.cpp",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 12
+        },
+        {
+          "path": "extension/icu/icu-datesub.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 2
+        },
+        {
+          "path": "extension/icu/icu-datetrunc.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "extension/icu/icu-list-range.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 6
+        },
+        {
+          "path": "extension/icu/icu-makedate.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 5
+        },
+        {
+          "path": "extension/icu/icu-strptime.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 4
+        },
+        {
+          "path": "extension/icu/icu-timebucket.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 8
+        },
+        {
+          "path": "extension/icu/icu-timezone.cpp",
+          "status": "modified",
+          "additions": 33,
+          "deletions": 6
+        },
+        {
+          "path": "extension/icu/icu_extension.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "extension/json/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/include/json_functions.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "extension/json/include/json_multi_file_info.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 54
+        },
+        {
+          "path": "extension/json/include/json_reader.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 16
+        },
+        {
+          "path": "extension/json/include/json_reader_options.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "extension/json/include/json_scan.hpp",
+          "status": "modified",
+          "additions": 48,
+          "deletions": 4
+        },
+        {
+          "path": "extension/json/json_functions.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "extension/json/json_functions/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/json/json_functions/copy_json.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 15
+        },
+        {
+          "path": "extension/json/json_functions/json_array_length.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 8
+        },
+        {
+          "path": "extension/json/json_functions/json_contains.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_deep_merge.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_exists.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 5
+        },
+        {
+          "path": "extension/json/json_functions/json_extract.cpp",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 14
+        },
+        {
+          "path": "extension/json/json_functions/json_geojson.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "extension/json/json_functions/json_keys.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 8
+        },
+        {
+          "path": "extension/json/json_functions/json_merge_patch.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_merge_patch_diff.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_modify.cpp",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 10
+        },
+        {
+          "path": "extension/json/json_functions/json_normalize.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 7
+        },
+        {
+          "path": "extension/json/json_functions/json_pretty.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_serialize_plan.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "extension/json/json_functions/json_serialize_sql.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_strip_nulls.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_structure.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_transform.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "extension/json/json_functions/json_type.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 7
+        },
+        {
+          "path": "extension/json/json_functions/json_valid.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_functions/json_value.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 7
+        },
+        {
+          "path": "extension/json/json_functions/read_json.cpp",
+          "status": "modified",
+          "additions": 43,
+          "deletions": 89
+        },
+        {
+          "path": "extension/json/json_functions/read_json_objects.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 37
+        },
+        {
+          "path": "extension/json/json_functions/read_single_json_file.cpp",
+          "status": "modified",
+          "additions": 383,
+          "deletions": 0
+        },
+        {
+          "path": "extension/json/json_multi_file_info.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 668
+        },
+        {
+          "path": "extension/json/json_reader.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/json/json_scan.cpp",
+          "status": "modified",
+          "additions": 403,
+          "deletions": 7
+        },
+        {
+          "path": "extension/parquet/parquet_extension.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/parquet/parquet_reader.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "extension/parquet/reader/variant/parquet_variant_iterator.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "extension/parquet/writer/variant/convert_variant.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "scripts/ci/job_stages.py",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "scripts/ci/test_job_stages.py",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 3
+        },
+        {
+          "path": "scripts/generate_enum_util.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/generate_util.py",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "scripts/parser/generate_transformer.py",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 2
+        },
+        {
+          "path": "scripts/parser/generate_transformer_trampoline.py",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 1
+        },
+        {
+          "path": "scripts/parser/grammar_types.py",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 1
+        },
+        {
+          "path": "scripts/parser/grammar_types.yml",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/regression/benchmark.py",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 2
+        },
+        {
+          "path": "scripts/regression/test_comparison.py",
+          "status": "modified",
+          "additions": 55,
+          "deletions": 16
+        },
+        {
+          "path": "scripts/regression/test_runner.py",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 47
+        },
+        {
+          "path": "scripts/run-clangd-tidy.py",
+          "status": "modified",
+          "additions": 31,
+          "deletions": 4
+        },
+        {
+          "path": "src/catalog/catalog_entry/duck_schema_entry.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/catalog/catalog_entry/duck_table_entry.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 25
+        },
+        {
+          "path": "src/catalog/catalog_entry/macro_catalog_entry.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/catalog/catalog_entry/scalar_function_catalog_entry.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 4
+        },
+        {
+          "path": "src/catalog/catalog_entry/table_catalog_entry.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/catalog/catalog_set.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "src/catalog/default/default_functions.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/catalog/default/default_table_functions.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/catalog/default/default_types.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/enum_util.cpp",
+          "status": "modified",
+          "additions": 49,
+          "deletions": 3
+        },
+        {
+          "path": "src/common/enums/optimizer_type.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/extra_type_info.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/common/local_file_system.cpp",
+          "status": "modified",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/multi_file/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/multi_file/multi_file_column_mapper.cpp",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 12
+        },
+        {
+          "path": "src/common/multi_file/multi_file_function.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/multi_file/multi_file_reader.cpp",
+          "status": "modified",
+          "additions": 77,
+          "deletions": 13
+        },
+        {
+          "path": "src/common/multi_file/table_function_multi_file.cpp",
+          "status": "modified",
+          "additions": 503,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/multi_file/union_by_name.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 6
+        },
+        {
+          "path": "src/common/opener_file_system.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/operator/cast_operators.cpp",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 0
+        },
+        {
+          "path": "src/common/settings.json",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/string_util.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "src/common/types.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/types/value.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 5
+        },
+        {
+          "path": "src/common/util/util_parsed_expression.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/common/vector_operations/comparison_operators.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 74
+        },
+        {
+          "path": "src/execution/expression_executor/execute_operator.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/execution/index/art/art.cpp",
+          "status": "modified",
+          "additions": 54,
+          "deletions": 11
+        },
+        {
+          "path": "src/execution/index/art/node.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/execution/index/art/node256_leaf.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 6
+        },
+        {
+          "path": "src/execution/index/bound_index.cpp",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 29
+        },
+        {
+          "path": "src/execution/operator/csv_scanner/scanner/base_scanner.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/execution/operator/csv_scanner/scanner/string_value_scanner.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 31
+        },
+        {
+          "path": "src/execution/operator/csv_scanner/state_machine/csv_state_machine_cache.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 6
+        },
+        {
+          "path": "src/execution/operator/helper/physical_reset.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/execution/operator/helper/physical_set.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/execution/operator/persistent/physical_batch_insert.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/execution/operator/persistent/physical_insert.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/execution/operator/schema/physical_create_index.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/execution/operator/schema/physical_drop.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/aggregate/distributive/count.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/aggregate/distributive/decimal_avg.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/aggregate/distributive/first_last_any.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 6
+        },
+        {
+          "path": "src/function/aggregate/distributive/minmax.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 13
+        },
+        {
+          "path": "src/function/aggregate/sorted_aggregate_function.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/aggregate_function.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/cast/list_casts.cpp",
+          "status": "modified",
+          "additions": 66,
+          "deletions": 10
+        },
+        {
+          "path": "src/function/cast/string_cast.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/cast/variant/from_variant.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/function.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/function_binder.cpp",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/macro_function.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/register_function_list.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/comparison/between.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/scalar/comparison/comparison.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/compressed_materialization/compress_geometry.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/compressed_materialization/compress_integral.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/compressed_materialization/compress_string.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/date/strftime.cpp",
+          "status": "modified",
+          "additions": 73,
+          "deletions": 37
+        },
+        {
+          "path": "src/function/scalar/generic/barrier.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/generic/constant_or_null.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 6
+        },
+        {
+          "path": "src/function/scalar/generic/error.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/generic/functions.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/generic/getvariable.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/generic/invoke.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/geometry/geometry_functions.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 8
+        },
+        {
+          "path": "src/function/scalar/list/contains_or_position.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/list/list_extract.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/scalar/list/list_intersect.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/list/list_resize.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/list/list_select.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/map/map_contains.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/operator/arithmetic.cpp",
+          "status": "modified",
+          "additions": 25,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/operator/cast.cpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/scalar/operator/decimal_division.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 5
+        },
+        {
+          "path": "src/function/scalar/sequence/nextval.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 7
+        },
+        {
+          "path": "src/function/scalar/string/caseconvert.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/string/concat.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/string/concat_ws.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/string/contains.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/string/length.cpp",
+          "status": "modified",
+          "additions": 58,
+          "deletions": 27
+        },
+        {
+          "path": "src/function/scalar/string/like.cpp",
+          "status": "modified",
+          "additions": 31,
+          "deletions": 10
+        },
+        {
+          "path": "src/function/scalar/string/md5.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 8
+        },
+        {
+          "path": "src/function/scalar/string/nfc_normalize.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/string/overlay.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 5
+        },
+        {
+          "path": "src/function/scalar/string/path_join.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/string/prefix.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/scalar/string/regexp.cpp",
+          "status": "modified",
+          "additions": 79,
+          "deletions": 81
+        },
+        {
+          "path": "src/function/scalar/string/regexp_escape.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/string/sha1.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/string/sha256.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/string/string_split.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 5
+        },
+        {
+          "path": "src/function/scalar/string/strip_accents.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/string/substring.cpp",
+          "status": "modified",
+          "additions": 96,
+          "deletions": 15
+        },
+        {
+          "path": "src/function/scalar/string/suffix.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 13
+        },
+        {
+          "path": "src/function/scalar/struct/remap_struct.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "src/function/scalar/struct/struct_contains.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 4
+        },
+        {
+          "path": "src/function/scalar/struct/struct_extract.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 6
+        },
+        {
+          "path": "src/function/scalar/system/aggregate_export.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 12
+        },
+        {
+          "path": "src/function/scalar/system/functions.json",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/system/parse_log_message.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/system/write_log.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 3
+        },
+        {
+          "path": "src/function/scalar/variant/variant_comparator.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/variant/variant_contains.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/variant/variant_extract.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/variant/variant_normalize.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/scalar/variant/variant_path_function.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 18
+        },
+        {
+          "path": "src/function/scalar/variant/variant_typeof.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar_function.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar_macro_function.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/table/read_csv.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/table/read_duckdb.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/table/system/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/table/system/duckdb_databases.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/table/system/duckdb_secret_type_parameters.cpp",
+          "status": "modified",
+          "additions": 106,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/table/system/duckdb_triggers.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 11
+        },
+        {
+          "path": "src/function/table/system/pragma_database_size.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/table/system_functions.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/table/table_scan.cpp",
+          "status": "modified",
+          "additions": 167,
+          "deletions": 25
+        },
+        {
+          "path": "src/function/table_function.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 14
+        },
+        {
+          "path": "src/function/window/window_boundaries_state.cpp",
+          "status": "modified",
+          "additions": 24,
+          "deletions": 12
+        },
+        {
+          "path": "src/function/window/window_rownumber_function.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/window/window_value_function.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 19
+        },
+        {
+          "path": "src/include/duckdb/catalog/catalog_entry/duck_table_entry.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/catalog/catalog_entry/table_catalog_entry.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/catalog/default/default_coordinate_systems.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/common/arrow/arrow_merge_event.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/common/enum_util.hpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/enums/optimizer_type.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/common/multi_file/multi_file_data.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 9
+        },
+        {
+          "path": "src/include/duckdb/common/multi_file/multi_file_function.hpp",
+          "status": "modified",
+          "additions": 146,
+          "deletions": 21
+        },
+        {
+          "path": "src/include/duckdb/common/multi_file/multi_file_options.hpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/multi_file/multi_file_reader.hpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/multi_file/multi_file_states.hpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 18
+        },
+        {
+          "path": "src/include/duckdb/common/multi_file/table_function_multi_file.hpp",
+          "status": "modified",
+          "additions": 223,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/opener_file_system.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/common/operator/cast_operators.hpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/serializer/serialization_data.hpp",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/swar.hpp",
+          "status": "modified",
+          "additions": 80,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art.hpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 23
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/node256_leaf.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/execution/index/bound_index.hpp",
+          "status": "modified",
+          "additions": 47,
+          "deletions": 41
+        },
+        {
+          "path": "src/include/duckdb/execution/index/index_lock.hpp",
+          "status": "modified",
+          "additions": 37,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/csv_scanner/base_scanner.hpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 51
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/csv_scanner/csv_byte_skipper.hpp",
+          "status": "modified",
+          "additions": 110,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/csv_scanner/csv_state_machine_cache.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 7
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/persistent/physical_batch_insert.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/persistent/physical_insert.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/schema/physical_create_index.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/operator/schema/physical_create_table.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/physical_operator.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/execution/physical_plan_generator.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/function/aggregate_function.hpp",
+          "status": "modified",
+          "additions": 25,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/function/function.hpp",
+          "status": "modified",
+          "additions": 46,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/function/function_serialization.hpp",
+          "status": "modified",
+          "additions": 53,
+          "deletions": 4
+        },
+        {
+          "path": "src/include/duckdb/function/lambda_functions.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/function/macro_function.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/function/register_function_list_helper.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/function/scalar/generic_common.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/function/scalar/generic_functions.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/function/scalar/system_functions.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/function/scalar_function.hpp",
+          "status": "modified",
+          "additions": 24,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/function/scalar_macro_function.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/function/table/read_csv.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/function/table/system_functions.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/function/table_function.hpp",
+          "status": "modified",
+          "additions": 45,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/function/table_macro_function.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/function/window_function.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/logging/log_storage.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/capi_v2/capi_v2_internal.hpp",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/capi_v2/extension_api_v2.hpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/extension_entries.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/prepared_statement.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/secret/secret.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/secret/secret_manager.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/main/settings.hpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/optimizer/builtin_function_lookup.hpp",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/optimizer/constant_or_null_simplification.hpp",
+          "status": "modified",
+          "additions": 33,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/optimizer/expression_rewriter.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/optimizer/filter_combiner.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/optimizer/projection_placement.hpp",
+          "status": "modified",
+          "additions": 31,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/optimizer/rule/like_optimizations.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/optimizer/statistics_propagator.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/parallel/pipeline.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/parallel/scan_read_ahead.hpp",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/parser/expression/constant_expression.hpp",
+          "status": "modified",
+          "additions": 30,
+          "deletions": 7
+        },
+        {
+          "path": "src/include/duckdb/parser/expression/operator_expression.hpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/parser/literal.hpp",
+          "status": "modified",
+          "additions": 87,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/parser/parsed_data/alter_info.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/parser/peg/ast/generic_copy_option.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/parser/peg/transformer/parse_result.hpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 23
+        },
+        {
+          "path": "src/include/duckdb/parser/peg/transformer/peg_transformer.hpp",
+          "status": "modified",
+          "additions": 164,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/parser/peg/transformer/transform_result.hpp",
+          "status": "modified",
+          "additions": 20,
+          "deletions": 9
+        },
+        {
+          "path": "src/include/duckdb/planner/bound_expression_sql_exporter.hpp",
+          "status": "modified",
+          "additions": 48,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_between_expression.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_case_expression.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_cast_expression.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/filter/expression_filter.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/logical_operator.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_create.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_create_index.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_create_table.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_delete.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_get.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_insert.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_merge_into.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_update.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/operator/logical_vacuum.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/sql_export_helpers.hpp",
+          "status": "modified",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/subquery/flatten_dependent_join.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/buffer/buffer_handle.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/buffer_manager.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/data_table.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/external_file_cache/caching_file_system.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/external_file_cache/external_file_cache.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/serialization/nodes.json",
+          "status": "modified",
+          "additions": 25,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/serialization/parsed_expression.json",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/storage/standard_buffer_manager.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/storage_extension.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/storage_manager.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/table/append_state.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 4
+        },
+        {
+          "path": "src/include/duckdb/storage/table/column_data.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/table/row_group.hpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/table/row_group_collection.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/storage/table/row_version_manager.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/table/scan_state.hpp",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/storage/temporary_file_manager.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/transaction/local_storage.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/transaction/undo_buffer.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb_extension_v2.h",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb_v2.h",
+          "status": "modified",
+          "additions": 120,
+          "deletions": 42
+        },
+        {
+          "path": "src/logging/log_storage.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v1/replacement_scan-c.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/main/capi/v1/scalar_function-c.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_custom_type.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_func_aggregate.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_func_copy.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_func_scalar.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_func_table.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_replacement_scan.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_result.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/main/capi/v2/capi_v2_statement.cpp",
+          "status": "modified",
+          "additions": 65,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/client_data.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/config.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/database.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/extension/extension_helper.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/extension/extension_install.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/extension/extension_loader.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "src/main/http/http_util.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/main/relation/limit_relation.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/main/relation/table_function_relation.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/main/relation/value_relation.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/main/secret/secret_manager.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/secret/secret_storage.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/main/settings/custom_settings.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/CMakeLists.txt",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/aggregate_function_rewriter.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 11
+        },
+        {
+          "path": "src/optimizer/aggregate_reuse.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/aggregate_rewrite.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 7
+        },
+        {
+          "path": "src/optimizer/builtin_function_lookup.cpp",
+          "status": "modified",
+          "additions": 59,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/compressed_materialization.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/optimizer/constant_or_null_simplification.cpp",
+          "status": "modified",
+          "additions": 195,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/expression_rewriter.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 13
+        },
+        {
+          "path": "src/optimizer/filter_combiner.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 99
+        },
+        {
+          "path": "src/optimizer/grouping_sets_optimizer.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "src/optimizer/join_elimination.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/join_filter_pushdown_optimizer.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 7
+        },
+        {
+          "path": "src/optimizer/optimizer.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/partial_aggregate_pushdown.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 25
+        },
+        {
+          "path": "src/optimizer/projection_placement.cpp",
+          "status": "modified",
+          "additions": 991,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/projection_pullup.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/optimizer/pushdown/pushdown_get.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 12
+        },
+        {
+          "path": "src/optimizer/remote_pushdown_optimizer.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/remove_unused_columns.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 9
+        },
+        {
+          "path": "src/optimizer/rule/arithmetic_simplification.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/rule/comparison_simplification.cpp",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 13
+        },
+        {
+          "path": "src/optimizer/rule/contains_to_in_clause.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/rule/date_trunc_simplification.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/optimizer/rule/empty_needle_removal.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/rule/enum_comparison.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/rule/in_clause_simplification_rule.cpp",
+          "status": "modified",
+          "additions": 82,
+          "deletions": 23
+        },
+        {
+          "path": "src/optimizer/rule/like_optimizations.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 5
+        },
+        {
+          "path": "src/optimizer/rule/monotone_preimage.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/optimizer/rule/move_constants.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 6
+        },
+        {
+          "path": "src/optimizer/rule/regex_optimizations.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/optimizer/rule/string_prefix.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 5
+        },
+        {
+          "path": "src/optimizer/statistics/expression/propagate_between.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 7
+        },
+        {
+          "path": "src/optimizer/statistics/expression/propagate_comparison.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/optimizer/statistics/expression/propagate_function.cpp",
+          "status": "modified",
+          "additions": 83,
+          "deletions": 5
+        },
+        {
+          "path": "src/optimizer/topn_window_elimination.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 38
+        },
+        {
+          "path": "src/parallel/scan_read_ahead.cpp",
+          "status": "modified",
+          "additions": 53,
+          "deletions": 3
+        },
+        {
+          "path": "src/parallel/task_executor.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "src/parallel/task_scheduler.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/parallel/task_scheduler_pool.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/constraints/foreign_key_constraint.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/expression/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/expression/constant_expression.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 5
+        },
+        {
+          "path": "src/parser/expression/operator_expression.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/expression/type_expression.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 12
+        },
+        {
+          "path": "src/parser/expression/value_expression.cpp",
+          "status": "modified",
+          "additions": 219,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/literal.cpp",
+          "status": "modified",
+          "additions": 225,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/parsed_data/alter_info.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/peg/transformer/peg_transformer.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/peg/transformer/peg_transformer_factory.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 93
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_alter.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_checkpoint.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_common.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 134
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_copy.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 9
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_index.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 6
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_macro.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_secret.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_sequence.cpp",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 12
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_table.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_view.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 4
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_describe.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_explain.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_export.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_expression.cpp",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 113
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_external_resource.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_generated.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_generated_trampoline.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_generic_copy_option.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_pivot.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_pragma.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 4
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_select.cpp",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 23
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_set.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 6
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_use.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/tableref/pivotref.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 99
+        },
+        {
+          "path": "src/planner/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder/expression/bind_aggregate_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_constant_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_macro_expression.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder/expression/bind_star_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_window_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/query_node/bind_select_node.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/planner/binder/query_node/plan_subquery.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/binder/statement/bind_copy.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 3
+        },
+        {
+          "path": "src/planner/binder/statement/bind_copy_database.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder/statement/bind_create.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 8
+        },
+        {
+          "path": "src/planner/binder/statement/bind_create_table.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/statement/bind_external_resource.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/statement/bind_insert.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/binder/statement/bind_summarize.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 12
+        },
+        {
+          "path": "src/planner/binder/tableref/bind_joinref.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/binder/tableref/bind_pivot.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 13
+        },
+        {
+          "path": "src/planner/bound_expression_sql_exporter.cpp",
+          "status": "modified",
+          "additions": 804,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/collation_binding.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/column_qualifier.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/expression/bound_cast_expression.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/expression/bound_function_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/expression_binder/group_binder.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "src/planner/expression_binder/index_binder.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/expression_binder/order_binder.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/filter/expression_filter.cpp",
+          "status": "modified",
+          "additions": 126,
+          "deletions": 21
+        },
+        {
+          "path": "src/planner/filter/table_filter_bloom_function.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/filter/table_filter_dynamic_function.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/filter/table_filter_optional_function.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/filter/table_filter_prefix_range_function.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 11
+        },
+        {
+          "path": "src/planner/filter/table_filter_selectivity_optional_function.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/operator/logical_create.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/statement_preprocessor.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 6
+        },
+        {
+          "path": "src/planner/subquery/flatten_dependent_join.cpp",
+          "status": "modified",
+          "additions": 56,
+          "deletions": 26
+        },
+        {
+          "path": "src/storage/checkpoint/table_data_writer.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/storage/compression/validity_uncompressed.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/storage/data_table.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/storage/external_file_cache/external_file_cache.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/storage/external_file_cache/file_buffer_handle_group.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/storage/local_storage.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 4
+        },
+        {
+          "path": "src/storage/serialization/serialize_nodes.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 0
+        },
+        {
+          "path": "src/storage/serialization/serialize_parsed_expression.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 4
+        },
+        {
+          "path": "src/storage/single_file_block_manager.cpp",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 20
+        },
+        {
+          "path": "src/storage/standard_buffer_manager.cpp",
+          "status": "modified",
+          "additions": 46,
+          "deletions": 19
+        },
+        {
+          "path": "src/storage/statistics/string_stats.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "src/storage/table/column_data.cpp",
+          "status": "modified",
+          "additions": 44,
+          "deletions": 10
+        },
+        {
+          "path": "src/storage/table/row_group.cpp",
+          "status": "modified",
+          "additions": 45,
+          "deletions": 8
+        },
+        {
+          "path": "src/storage/table/row_group_collection.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 12
+        },
+        {
+          "path": "src/storage/table/row_version_manager.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "src/storage/table/scan_state.cpp",
+          "status": "modified",
+          "additions": 36,
+          "deletions": 2
+        },
+        {
+          "path": "src/storage/table/variant_column_data.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/storage/table_index_list.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/storage/temporary_file_manager.cpp",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 13
+        },
+        {
+          "path": "src/storage/wal_replay.cpp",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 14
+        },
+        {
+          "path": "test/api/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/capi/v1/capi_config_options.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/capi/v1/capi_scalar_functions.cpp",
+          "status": "modified",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/capi/v1/test_capi_extract.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/api/capi/v2/test_capi_v2_statement.cpp",
+          "status": "modified",
+          "additions": 213,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/test_grammar_extension.cpp",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 1
+        },
+        {
+          "path": "test/api/test_query_node_copy.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/api/test_read_ahead_progress.cpp",
+          "status": "modified",
+          "additions": 56,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/test_relation_api.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/common/CMakeLists.txt",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "test/common/test_file_system.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/common/test_literal.cpp",
+          "status": "modified",
+          "additions": 163,
+          "deletions": 0
+        },
+        {
+          "path": "test/common/test_value_to_expression.cpp",
+          "status": "modified",
+          "additions": 167,
+          "deletions": 0
+        },
+        {
+          "path": "test/common/test_value_to_sql_string.cpp",
+          "status": "modified",
+          "additions": 125,
+          "deletions": 0
+        },
+        {
+          "path": "test/configs/disable_optimizer.json",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "test/configs/force_storage_restart.json",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "test/configs/stats_dependent_tests.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "test/configs/storage_compatibility.json",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "test/configs/verification_projection.json",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "test/extension/loadable_extension_demo.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 2
+        },
+        {
+          "path": "test/fuzzer/duckfuzz/window_negate_stats.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/fuzzer/sqlsmith/window-list-value.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/fuzzer/sqlsmith/window-rows-overflow.test",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "test/optimizer/CMakeLists.txt",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/aggregate_rewrite.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "test/optimizer/bound_expression_sql_export.cpp",
+          "status": "modified",
+          "additions": 2935,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/bound_function_identity.cpp",
+          "status": "modified",
+          "additions": 306,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/catalog_function_binding.test",
+          "status": "modified",
+          "additions": 266,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/join_elimination.test",
+          "status": "modified",
+          "additions": 49,
+          "deletions": 1
+        },
+        {
+          "path": "test/optimizer/materialized_cte_sibling_column_pruning.test",
+          "status": "modified",
+          "additions": 137,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/projection_placement.test",
+          "status": "modified",
+          "additions": 445,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/projection_placement_results.test",
+          "status": "modified",
+          "additions": 123,
+          "deletions": 0
+        },
+        {
+          "path": "test/optimizer/projection_pullup.test",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 1
+        },
+        {
+          "path": "test/optimizer/row_number_virtual_column.test",
+          "status": "modified",
+          "additions": 143,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/aggregate/aggregates/approx_top_k.test",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/aggregate/aggregates/arg_min_max_nulls_last.test",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/aggregate/variant/variant_group_object.test",
+          "status": "modified",
+          "additions": 228,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/aggregate/variant/variant_group_object_shredded.test",
+          "status": "modified",
+          "additions": 42,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/alter/add_unique/test_add_unique.test",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/alter/drop_col/test_drop_col_failure.test",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/alter/rename_table/test_rename_table_conflict_storage_name.test",
+          "status": "modified",
+          "additions": 59,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/cast/string_to_struct_variant_child.test",
+          "status": "modified",
+          "additions": 61,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/foreignkey/fk_self_reference_tostring.test",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/foreignkey/test_fk_self_referencing.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/copy/csv/csv_null_byte.test",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/copy/csv/test_glob_type.test",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/copy/file_size_bytes_existing_target.test",
+          "status": "modified",
+          "additions": 21,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/copy/parquet/read_ahead/readahead_depth_learning.test",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "test/sql/copy/parquet/read_ahead/readahead_open_error.test",
+          "status": "modified",
+          "additions": 77,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/cte/recursive_cte_correlated_bindings.test",
+          "status": "modified",
+          "additions": 143,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/error/test_try_nested_conditional.test",
+          "status": "modified",
+          "additions": 101,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/filter/CMakeLists.txt",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/filter/prefix_range_filter_lookup.cpp",
+          "status": "modified",
+          "additions": 77,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/function/string/parse_formatted_bytes.test",
+          "status": "modified",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/function/string/suffix_large_string.test_slow",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/function/string/test_substring.test",
+          "status": "modified",
+          "additions": 40,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/function/table/table_bind_replace.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "test/sql/index/art/issues/test_art_view_col_binding.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/index/art/storage/test_art_checkpoint_delta_revert_stress.test_slow",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "test/sql/index/art/storage/test_art_node256_leaf_layout.test",
+          "status": "modified",
+          "additions": 220,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/join/test_between_null_bound_join.test",
+          "status": "modified",
+          "additions": 93,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/join/test_huge_nested_payloads.test_slow",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/json/scalar/test_json_extract_input_types.test",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/json/table/read_single_json_file.test",
+          "status": "modified",
+          "additions": 487,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/bool_ref_row_group_pruning.test",
+          "status": "modified",
+          "additions": 31,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/optimizer/boolean_wrapper_pushdown.test",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/optimizer/constant_function_zonemap_pruning.test",
+          "status": "modified",
+          "additions": 140,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/contains_row_group_pruning.test",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/optimizer/cross_column_expression_stats_pruning.test",
+          "status": "modified",
+          "additions": 236,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/cross_column_or_stats_pruning.test",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 104
+        },
+        {
+          "path": "test/sql/optimizer/expression/enum_full_domain_behavior.test",
+          "status": "modified",
+          "additions": 178,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/expression/enum_full_domain_fold_guard.test",
+          "status": "modified",
+          "additions": 144,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/expression/test_enum_in_simplification.test",
+          "status": "modified",
+          "additions": 308,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/optimizer/expression/uncommitted_appends_fold_guard.test",
+          "status": "modified",
+          "additions": 65,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/in_list_row_group_pruning.test",
+          "status": "modified",
+          "additions": 81,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/monotone_function_zonemap_pruning.test",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/narrowing_cast_not_invertible.test",
+          "status": "modified",
+          "additions": 69,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/optimizer/upper_lower_zonemap_pruning.test",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 7
+        },
+        {
+          "path": "test/sql/parser/adjacent_string_literal.test",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/parser/literal_round_trip.test",
+          "status": "modified",
+          "additions": 162,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/parser/switch_case.test",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/pivot/pivot_errors.test",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/pivot/pivot_subquery.test",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/secrets/test_secret_type_parameters.test",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/external_file_cache/internal_issue_10700.test",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/metadata_reuse_optimistic_write.test_slow",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4
+        },
+        {
+          "path": "test/sql/storage/optimistic_write/concurrent_bulk_append_commits.test_slow",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 6
+        },
+        {
+          "path": "test/sql/storage/prefetch/async_native_scan_pool.test",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/prefetch/async_native_scan_read_ahead.test",
+          "status": "modified",
+          "additions": 100,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/prefetch/async_native_scan_read_ahead_concurrent.test",
+          "status": "modified",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/prefetch/async_native_scan_read_ahead_pruning.test",
+          "status": "modified",
+          "additions": 67,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/prefetch/prefetch_run_size_cap.test",
+          "status": "modified",
+          "additions": 81,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/types/variant/variant_validity_stats.test",
+          "status": "modified",
+          "additions": 75,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/wal/wal_replay_pending_index_dropped_table.test",
+          "status": "modified",
+          "additions": 48,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/subquery/any_all_variant_extremum.test",
+          "status": "modified",
+          "additions": 108,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/table_function/duckdb_functions.test_slow",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/timezone/test_icu_timezone.test",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/transactions/test_validity_append_rollback.test",
+          "status": "modified",
+          "additions": 69,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/types/nested/list/list_cast_child_offset.test",
+          "status": "modified",
+          "additions": 94,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/types/nested/list/list_comparison_stale_positions.test",
+          "status": "modified",
+          "additions": 105,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/types/nested/list/nested_comparison_null_children.test",
+          "status": "modified",
+          "additions": 121,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/types/nested/list/test_list_slice_step.test",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/types/numeric/float_precision.test",
+          "status": "modified",
+          "additions": 71,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/types/variant/try_cast_nested_list_writer.test",
+          "status": "modified",
+          "additions": 46,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/window/test_boundary_expr.test",
+          "status": "modified",
+          "additions": 53,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/window/test_quantile_window.test_slow",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "tools/cpp/duckdb_cpp.cpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 1
+        },
+        {
+          "path": "tools/cpp/duckdb_cpp.hpp",
+          "status": "modified",
+          "additions": 55,
+          "deletions": 34
+        },
+        {
+          "path": "tools/cpp/tests/test_cpp_api_query.cpp",
+          "status": "modified",
+          "additions": 26,
+          "deletions": 0
+        },
+        {
+          "path": "tools/shell/shell_extension.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 2
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "сообщение начинается с Merge"
+    },
+    {
+      "sha": "7fe333425c116c01a58eaa4fd464c79be547645a",
+      "base_sha": "d2d3c94d6b05ca95d7a885dc9d3974dcf484d7a2",
+      "subject": "update security.md (#24815)",
+      "body": "it now better explains DuckDB's security model along with the public\ndocs on securing DuckDB in\nhttps://duckdb.org/docs/lts/operations_manual/securing_duckdb/overview",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "SECURITY.md",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "только документация"
+    },
+    {
+      "sha": "fea4498ea5e7ba7687aab2619417eed9139960eb",
+      "base_sha": "e829ad15292587f35a6725026684d361831ff19c",
+      "subject": "Fix #26401: EXISTS returns false when its subquery filters on an aggregate over an empty table (#26419)",
+      "body": "Fixes #26401.\n\n## Problem\n\n`EXISTS` returns false (and `NOT EXISTS` returns rows) when its subquery\nfilters on an aggregate over an empty table:\n\n```sql\nCREATE TABLE t (a INT);\nINSERT INTO t VALUES (1), (2);\nCREATE TABLE e (a INT); -- empty\nSELECT EXISTS (SELECT 1 FROM t WHERE NOT EXISTS (SELECT 1 FROM e));\n-- expected true, got false\n```\n\n- Uncorrelated `EXISTS` is planned as `LIMIT 1`, then `COU",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/optimizer/statistics/operator/propagate_aggregate.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/subquery/exists/test_issue_26401.test",
+          "status": "modified",
+          "additions": 40,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть src и test/sql, нет extension/core_functions"
+    },
+    {
+      "sha": "3b3312a963c693efe6bcaef4ee4484b4adc17200",
+      "base_sha": "a770db1197ec428f11d7b9529c66389b4e40c87d",
+      "subject": "Fix missing bitmap update for fixed size buffers (#26460)",
+      "body": "Resolves https://github.com/duckdblabs/duckdb-internal/issues/11171.\n\nWe now mark a fixed size buffer as modified when updating the bitmask.\nWe've also renamed the `GetOffset` function as the naming was slightly\nmisleading w.r.t the function actually modifying internal state.\nFinally, to mirror `AllocateSegment` we now also introduce a\n`FreeSegment` function so buffer properties are modified withi",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/execution/index/fixed_size_allocator.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 15
+        },
+        {
+          "path": "src/execution/index/fixed_size_buffer.cpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 7
+        },
+        {
+          "path": "src/include/duckdb/execution/index/fixed_size_buffer.hpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "test/sql/index/art/storage/test_art_allocator_bitmap_checkpoint.test",
+          "status": "modified",
+          "additions": 80,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть src и test/sql, нет extension/core_functions"
+    },
+    {
+      "sha": "a770db1197ec428f11d7b9529c66389b4e40c87d",
+      "base_sha": "14040ad4c9b65fe795f097f1ac4235a4b1cfd5db",
+      "subject": "Preserve casts in list comprehension rewrites (#26508)",
+      "body": "Nested list lambdas can return an incorrect value when the\nlist-comprehension rewrite discards casts: converting `[2]` through\n`INTEGER → BOOLEAN → INTEGER` currently returns `[2]` instead of `[1]`.\nFilter cast chains and struct cast chains can likewise change results;\n`TRY_CAST` can become a throwing cast. Fixes #26507.\n\nThe matcher currently unwraps arbitrary casts to recognize the parser's\n`fil",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/optimizer/rule/list_comprehension_rewrite.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 14
+        },
+        {
+          "path": "test/sql/optimizer/expression/list_comprehension_casts.test",
+          "status": "modified",
+          "additions": 102,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть src и test/sql, нет extension/core_functions"
+    },
+    {
+      "sha": "638b09261a334feb2f7deb742fe3996db3c974b1",
+      "base_sha": "3b3312a963c693efe6bcaef4ee4484b4adc17200",
+      "subject": "Let DDL that keeps table storage, and sequences, run alongside checkpoints (#26456)",
+      "body": "Every transaction that runs DDL or uses a sequence takes the shared\ncheckpoint lock and keeps it until the transaction is cleaned up. While\nsuch a transaction is open, or committed but still needed by an older\nsnapshot:\n\n- `CHECKPOINT` fails with \"Cannot CHECKPOINT: there are other write\ntransactions active\",\n- automatic checkpoints at commit are skipped, so the WAL keeps growing,\n- and the DDL it",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "src/catalog/catalog_entry/duck_schema_entry.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "src/catalog/catalog_entry/duck_table_entry.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/catalog/catalog_set.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 18
+        },
+        {
+          "path": "src/catalog/dependency_manager.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/catalog/duck_catalog.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 8
+        },
+        {
+          "path": "src/function/table/read_duckdb.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/catalog/catalog_entry/duck_schema_entry.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/catalog/catalog_entry/duck_table_entry.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/catalog/catalog_set.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/catalog/dependency_manager.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/catalog/duck_catalog.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/common/enums/database_modification_type.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/parser/parsed_data/alter_info.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/parser/parsed_data/create_info.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/parser/parsed_data/drop_info.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/parsed_data/alter_info.cpp",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/parsed_data/create_info.cpp",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "src/parser/parsed_data/drop_info.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder/statement/bind_alter.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/statement/bind_create.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/binder/statement/bind_drop.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/storage/checkpoint_manager.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 13
+        },
+        {
+          "path": "src/storage/storage_manager.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "src/storage/table/in_memory_checkpoint.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 4
+        },
+        {
+          "path": "src/transaction/duck_transaction.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/storage/concurrent_checkpoint_catalog_ddl.test_slow",
+          "status": "modified",
+          "additions": 624,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/concurrent_checkpoint_catalog_ddl_abort.test_slow",
+          "status": "modified",
+          "additions": 202,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/storage/concurrent_checkpoint_catalog_ddl_variants.test_slow",
+          "status": "modified",
+          "additions": 580,
+          "deletions": 0
+        },
+        {
+          "path": "test/sqlite/sqllogic_command.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "нет extension/core_functions"
+    },
+    {
+      "sha": "edd0259ec0a6e1b1269e7a86e042504f1fdddc84",
+      "base_sha": "57a9eb2acea80bbe9621afd452cc73c0f711970e",
+      "subject": "Remove `BoundExpression` (#25150)",
+      "body": "This PR attempts to remove the `BoundExpression` class, replacing it\nwith a dedicated `BoundExpressionMap` that lives within the `Binder`.\n\nThe `BoundExpression` has been a long standing quirk in the query\nexecution frontend: Its a \"fake\" `ParsedExpression` that secretly holds\na bound `Expression`, whose only purpose was to represent a partially or\nalready bound part of the expression tree. The wa",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/scalar/list/list_value.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/cardinality.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_concat.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_entries.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_from_entries.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/map/map_keys_values.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/struct/struct_insert.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "extension/core_functions/scalar/struct/struct_update.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "scripts/generate_util.py",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/common/enum_util.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 3
+        },
+        {
+          "path": "src/common/enums/expression_type.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/common/util/util_parsed_expression.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/function_binder.cpp",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 17
+        },
+        {
+          "path": "src/function/macro_function.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/scalar/list/list_extract.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/struct/struct_pack.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/table/copy_csv.cpp",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 38
+        },
+        {
+          "path": "src/function/window/window_value_function.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 12
+        },
+        {
+          "path": "src/function/window_function.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/include/duckdb/common/enums/expression_type.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/function/function_binder.hpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 14
+        },
+        {
+          "path": "src/include/duckdb/function/window_function.hpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 12
+        },
+        {
+          "path": "src/include/duckdb/parser/expression/bound_expression.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 42
+        },
+        {
+          "path": "src/include/duckdb/parser/expression/list.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/parser/expression/window_expression.hpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/planner/binder.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/bound_expression_map.hpp",
+          "status": "modified",
+          "additions": 78,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_columnref_expression.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_expanded_expression.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_lambdaref_expression.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/planner/expression_binder.hpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 1
+        },
+        {
+          "path": "src/parser/expression/window_expression.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 26
+        },
+        {
+          "path": "src/planner/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder/expression/bind_aggregate_expression.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 16
+        },
+        {
+          "path": "src/planner/binder/expression/bind_between_expression.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/planner/binder/expression/bind_case_expression.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 6
+        },
+        {
+          "path": "src/planner/binder/expression/bind_cast_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_collate_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_columnref_expression.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_comparison_expression.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/binder/expression/bind_conjunction_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_function_expression.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 12
+        },
+        {
+          "path": "src/planner/binder/expression/bind_operator_expression.cpp",
+          "status": "modified",
+          "additions": 31,
+          "deletions": 28
+        },
+        {
+          "path": "src/planner/binder/expression/bind_subquery_expression.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/expression/bind_unnest_expression.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 5
+        },
+        {
+          "path": "src/planner/binder/expression/bind_window_expression.cpp",
+          "status": "modified",
+          "additions": 50,
+          "deletions": 45
+        },
+        {
+          "path": "src/planner/binder/statement/bind_create.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/binder/tableref/bind_joinref.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "src/planner/bound_expression_map.cpp",
+          "status": "modified",
+          "additions": 113,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/column_qualifier.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/expression/CMakeLists.txt",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/expression/bound_expression.cpp",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 41
+        },
+        {
+          "path": "src/planner/expression_binder.cpp",
+          "status": "modified",
+          "additions": 41,
+          "deletions": 11
+        },
+        {
+          "path": "src/planner/expression_binder/base_select_binder.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/expression_binder/having_binder.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/expression_binder/table_function_binder.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 4
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть core_functions, нет test/sql"
+    },
+    {
+      "sha": "09e9d402b5f94aaa8bc0c64d83a93f6216f26ff3",
+      "base_sha": "2756f0265561e29caea8750fb373e6fa1c9b79bf",
+      "subject": "Fix incorrect filtered MAD window results by correctly counting rows across excluded subframes (#24847)",
+      "body": "Fix #24442\n\n### Problem\n\nThe issue affected `MAD` window calculations when a `FILTER` or nullable\ninput was combined with an `EXCLUDE` clause. Exclusion can split a\nlogical window frame into multiple disjoint subframes, but the optimized\n`MAD` implementation incorrectly counted the entire span between the\nfirst and last subframe, including the excluded gap.\n\nFor example, the reported row should ca",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/aggregate/holistic/mad.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/issues/general/test_24442.test",
+          "status": "modified",
+          "additions": 89,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть core_functions, нет test/sql"
+    },
+    {
+      "sha": "b9694071496e57998cf03268f1ce1859ad87fb6e",
+      "base_sha": "73bf1c60a7ccb9bef5a437700684da032f235c9c",
+      "subject": "Dont remove lambda expressions from functions (#24970)",
+      "body": "Similar to #24594, this PR changes the lambda-taking functions to not\ndelete the bound lambda expression from their arguments.\n\nCompatibility-wise, we can \"recover\" the lambda expression from the\nbind-data when we read old plans - but we don't do anything special for\nforwards compatibility, as IIRC we don't read new plans on old storage\nversions anyway(?). We also now serialize the lambda paramete",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "extension/core_functions/lambda_functions.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 3
+        },
+        {
+          "path": "extension/core_functions/scalar/list/list_reduce.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 3
+        },
+        {
+          "path": "src/common/types.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1
+        },
+        {
+          "path": "src/execution/expression_executor.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 1
+        },
+        {
+          "path": "src/execution/expression_executor/CMakeLists.txt",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/execution/expression_executor/execute_lambda.cpp",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 0
+        },
+        {
+          "path": "src/function/function_binder.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/function/scalar/generic/invoke.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 7
+        },
+        {
+          "path": "src/include/duckdb/execution/expression_executor.hpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/function/lambda_functions.hpp",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/bound_tokens.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/expression/bound_lambda_expression.hpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/planner/logical_operator_visitor.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/serialization/expression.json",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/cse_optimizer.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/matcher/expression_matcher.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/relation_statistics/relation_statistics_helper.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 0
+        },
+        {
+          "path": "src/optimizer/rule/list_comprehension_rewrite.cpp",
+          "status": "modified",
+          "additions": 49,
+          "deletions": 6
+        },
+        {
+          "path": "src/planner/binder/expression/bind_function_expression.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 4
+        },
+        {
+          "path": "src/planner/binder/expression/bind_lambda.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 4
+        },
+        {
+          "path": "src/planner/collation_binding.cpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 4
+        },
+        {
+          "path": "src/planner/expression/bound_function_expression.cpp",
+          "status": "modified",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/expression/bound_lambda_expression.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/expression_iterator.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "src/planner/logical_operator_visitor.cpp",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 0
+        },
+        {
+          "path": "src/storage/serialization/serialize_expression.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_comprehension.bin",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_comprehension.sql",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_filter.bin",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_filter.sql",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_invoke.bin",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_invoke.sql",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_reduce.bin",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_reduce.sql",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_transform.bin",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 0
+        },
+        {
+          "path": "test/api/serialized_plans/cases/lambda_transform.sql",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 0
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "есть core_functions, нет test/sql"
+    },
+    {
+      "sha": "14040ad4c9b65fe795f097f1ac4235a4b1cfd5db",
+      "base_sha": "fea4498ea5e7ba7687aab2619417eed9139960eb",
+      "subject": "DEFERRED mode for PRIMARY KEY / UNIQUE (#26423)",
+      "body": "https://github.com/duckdblabs/duckdb-internal/issues/6885\n\nIn a nutshell:\n\n```sql\nCREATE TABLE t (id INTEGER PRIMARY KEY DEFERRED, note VARCHAR);\n\nBEGIN;\nINSERT INTO items VALUES (1, 'keep'), (1, 'remove'); -- doesn't eagerly fail as before\n\nDELETE FROM items WHERE note = 'remove';\nCOMMIT; -- succeeds\n```\n\nImplement DEFERRED mode for UNIQUE and PRIMARY KEY constraints. A\ndeferred constraint is che",
+      "parent_count": 2,
+      "pr_number": null,
+      "files": [
+        {
+          "path": "scripts/parser/grammar_types.yml",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/catalog/catalog_entry/duck_table_entry.cpp",
+          "status": "modified",
+          "additions": 7,
+          "deletions": 4
+        },
+        {
+          "path": "src/catalog/catalog_entry/table_catalog_entry.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 10
+        },
+        {
+          "path": "src/catalog/default/default_views.cpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 2
+        },
+        {
+          "path": "src/common/enum_util.cpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/execution/operator/schema/physical_create_index.cpp",
+          "status": "modified",
+          "additions": 14,
+          "deletions": 2
+        },
+        {
+          "path": "src/function/table/system/duckdb_constraints.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/common/enum_util.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/common/enums/constraint_check_mode.hpp",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/execution/index/art/art_operator.hpp",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 9
+        },
+        {
+          "path": "src/include/duckdb/parser/constraints/unique_constraint.hpp",
+          "status": "modified",
+          "additions": 6,
+          "deletions": 7
+        },
+        {
+          "path": "src/include/duckdb/parser/peg/ast/column_constraint_entry.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/parser/peg/transformer/peg_transformer.hpp",
+          "status": "modified",
+          "additions": 9,
+          "deletions": 9
+        },
+        {
+          "path": "src/include/duckdb/planner/binder.hpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/data_table.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "src/include/duckdb/storage/index_storage_info.hpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "src/include/duckdb/storage/serialization/constraint.json",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/include/duckdb/storage/table/index_entry.hpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 2
+        },
+        {
+          "path": "src/include/duckdb/storage/table/table_index_list.hpp",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "src/parser/constraints/unique_constraint.cpp",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 12
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_create_table.cpp",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 16
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_generated.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 12
+        },
+        {
+          "path": "src/parser/peg/transformer/transform_generated_trampoline.cpp",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 12
+        },
+        {
+          "path": "src/planner/binder/statement/bind_alter.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/planner/binder/statement/bind_create_table.cpp",
+          "status": "modified",
+          "additions": 27,
+          "deletions": 19
+        },
+        {
+          "path": "src/planner/binder/statement/bind_insert.cpp",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 5
+        },
+        {
+          "path": "src/storage/checkpoint_manager.cpp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "src/storage/data_table.cpp",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 3
+        },
+        {
+          "path": "src/storage/index_entry.cpp",
+          "status": "modified",
+          "additions": 27,
+          "deletions": 4
+        },
+        {
+          "path": "src/storage/serialization/serialize_constraint.cpp",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "src/storage/table_index_list.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 7
+        },
+        {
+          "path": "src/storage/wal_replay.cpp",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 5
+        },
+        {
+          "path": "test/configs/encryption.json",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 3
+        },
+        {
+          "path": "test/configs/storage_compatibility.json",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "test/configs/v1_storage.json",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 3
+        },
+        {
+          "path": "test/configs/v1_storage_block_size_16kB.json",
+          "status": "modified",
+          "additions": 12,
+          "deletions": 3
+        },
+        {
+          "path": "test/serialize/serialization_test.cpp",
+          "status": "modified",
+          "additions": 5,
+          "deletions": 4
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_alter_constraint_check_mode.test",
+          "status": "modified",
+          "additions": 22,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_alter_constraint_timing.test",
+          "status": "modified",
+          "additions": 0,
+          "deletions": 28
+        },
+        {
+          "path": "test_constraint_check_mode_persistence.test",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3
+        },
+        {
+          "path": "test_constraint_check_mode_storage_version.test",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 8
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_alter.test",
+          "status": "modified",
+          "additions": 226,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_checkpoint.test_slow",
+          "status": "modified",
+          "additions": 105,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_compatibility.test",
+          "status": "modified",
+          "additions": 102,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_delete_reinsert.test",
+          "status": "modified",
+          "additions": 113,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_large.test_slow",
+          "status": "modified",
+          "additions": 103,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_metadata.test",
+          "status": "modified",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_persistence.test",
+          "status": "modified",
+          "additions": 178,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_statements.test",
+          "status": "modified",
+          "additions": 215,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_syntax.test",
+          "status": "modified",
+          "additions": 17,
+          "deletions": 13
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_trigger.test",
+          "status": "modified",
+          "additions": 62,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/deferred/test_deferred_unique_pk.test",
+          "status": "modified",
+          "additions": 103,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/constraints/foreignkey/test_fk_column_count.test",
+          "status": "modified",
+          "additions": 28,
+          "deletions": 0
+        },
+        {
+          "path": "test/sql/index/art/create_drop/test_art_create_unique.test",
+          "status": "modified",
+          "additions": 32,
+          "deletions": 1
+        },
+        {
+          "path": "test/sql/table_function/duckdb_constraints_fk.test",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        }
+      ],
+      "expected": "reject",
+      "human_reason": "правка каталога, нет пары SQL-код и test/sql"
+    }
+  ]
+}

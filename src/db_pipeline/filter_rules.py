@@ -22,6 +22,7 @@ def filter_candidate(
     known_shas: set[str],
     solution_paths: list[str] | None = None,
     test_paths: list[str] | None = None,
+    sql_only: bool = False,
 ) -> FilterDecision:
     if change.sha in known_shas:
         return FilterDecision(False, "already_in_journal", "sha уже есть в журнале")
@@ -47,10 +48,59 @@ def filter_candidate(
         return FilterDecision(False, "formatting", "форматирование или переименование без тестов")
     if _is_documentation(change):
         return FilterDecision(False, "documentation", "только документация")
+    if sql_only:
+        return _filter_sql(change, core)
     missing = _missing_code_or_tests(change, core)
     if missing is not None:
         return missing
     return FilterDecision(True, "accepted", "есть правка кода ядра и правка тестов")
+
+
+@beartype
+def _filter_sql(change: ChangeView, core: CoreConfig) -> FilterDecision:
+    has_code = any(_matches_sql_prefix(item.path, core.sql_code_prefixes) for item in change.files)
+    has_test = any(_is_sql_test(item.path, core) for item in change.files)
+    if not has_code or not has_test:
+        return _missing_sql(has_code, has_test)
+    if core.id == "postgres" and not any(_is_regress_expected(item.path) for item in change.files):
+        return FilterDecision(False, "no_oracle_test", "нет изменённого expected/*.out")
+    return FilterDecision(True, "accepted", "есть правка SQL-кода и правка SQL-тестов")
+
+
+@beartype
+def _missing_sql(has_code: bool, has_test: bool) -> FilterDecision:
+    if not has_code and not has_test:
+        reason = "нет правки SQL-кода и нет правки SQL-тестов"
+    elif not has_code:
+        reason = "нет правки SQL-кода"
+    else:
+        reason = "нет правки SQL-тестов"
+    return FilterDecision(False, "missing_code_and_tests", reason)
+
+
+@beartype
+def _matches_sql_prefix(path: str, prefixes: list[str]) -> bool:
+    for prefix in prefixes:
+        if prefix.endswith("/"):
+            if path.startswith(prefix):
+                return True
+        elif path == prefix:
+            return True
+    return False
+
+
+@beartype
+def _is_sql_test(path: str, core: CoreConfig) -> bool:
+    if not _matches_sql_prefix(path, core.sql_test_prefixes):
+        return False
+    if len(core.sql_test_suffixes) == 0:
+        return True
+    return any(path.endswith(suffix) for suffix in core.sql_test_suffixes)
+
+
+@beartype
+def _is_regress_expected(path: str) -> bool:
+    return path.startswith("src/test/regress/expected/") and path.endswith(".out")
 
 
 @beartype
