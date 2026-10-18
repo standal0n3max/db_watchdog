@@ -8,6 +8,7 @@ from db_pipeline.config import load_cores, require_core
 from db_pipeline.filter_rules import filter_candidate
 from db_pipeline.git_ops import select_harvest_rows
 from db_pipeline.models import ChangeView, FileChange
+from db_pipeline.sql_report import write_sql_labeled_report
 from db_pipeline.stages import read_cursor, write_cursor
 
 
@@ -99,6 +100,13 @@ class HarvestTests(unittest.TestCase):
         self.assertEqual(skipped[0][0], "bbb")
         no_pr = select_harvest_rows(rows, {"ccc", "bbb", "aaa"}, "", 5, True)
         self.assertEqual(no_pr, [])
+
+    def test_labeled_sql_twenties_match_frozen_marks(self) -> None:
+        for core_id in ("duckdb", "postgres", "sqlite"):
+            with tempfile.TemporaryDirectory() as tmp:
+                matched, total = write_sql_labeled_report(core_id, data=Path(tmp))
+            self.assertEqual(total, 20)
+            self.assertGreaterEqual(matched, 16)
 
     def test_cursor_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
