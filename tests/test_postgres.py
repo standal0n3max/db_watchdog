@@ -170,6 +170,7 @@ class PostgresFilterTests(unittest.TestCase):
         self.assertGreater(script.index(cleanup), script.index("exec runuser"))
         self.assertIn("EXTRA_REGRESS_OPTS=--temp-instance=/tmp/pg-regress-instance", script)
         self.assertGreater(script.index("EXTRA_REGRESS_OPTS"), script.index("exec runuser"))
+        self.assertIn(')" -- "$@"', script)
 
     def test_postmaster_failure_is_environment_and_keeps_startup_logs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

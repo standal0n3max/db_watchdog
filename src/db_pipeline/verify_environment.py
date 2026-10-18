@@ -568,7 +568,7 @@ def host_user_script(script: str) -> str:
         f"{cleanup}"
         f"{script}\n"
         "END_PIPELINE\n"
-        ')"\n'
+        ')" -- "$@"\n'
     )
 
 
