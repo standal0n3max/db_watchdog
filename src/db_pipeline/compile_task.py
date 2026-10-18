@@ -4,7 +4,8 @@ from beartype import beartype
 
 from db_pipeline.config import CoreConfig
 from db_pipeline.models import ChangeView, StatementSource, TaskInstance
-from db_pipeline.patch_split import paths_in_diff, split_by_paths, split_unified_diff
+from db_pipeline.errors import PipelineError
+from db_pipeline.patch_split import paths_in_diff, regress_test_names, split_by_paths, split_regress_diff, split_unified_diff
 
 
 @beartype
@@ -18,9 +19,16 @@ def compile_task(
     test_paths: list[str] | None = None,
     fail_to_pass: list[str] | None = None,
     oracle_command: str = "",
+    regress_split: bool = False,
 ) -> TaskInstance:
-    if gold_paths is not None and test_paths is not None:
+    if regress_split:
+        test_patch, gold_patch = split_regress_diff(diff_text)
+        names = regress_test_names(test_patch)
+        if len(names) == 0:
+            raise PipelineError("compile", "в патче регресса нет expected/*.out")
+    elif gold_paths is not None and test_paths is not None:
         test_patch, gold_patch = split_by_paths(diff_text, gold_paths, test_paths)
+        names = fail_to_pass if fail_to_pass is not None else _fail_names(test_patch, core)
     else:
         test_patch, gold_patch = split_unified_diff(
             diff_text,
@@ -29,7 +37,7 @@ def compile_task(
             core.test_suffixes,
             core.code_exclude,
         )
-    names = fail_to_pass if fail_to_pass is not None else _fail_names(test_patch, core)
+        names = fail_to_pass if fail_to_pass is not None else _fail_names(test_patch, core)
     return TaskInstance(
         instance_id=instance_id(core, change),
         repository=core.repository,

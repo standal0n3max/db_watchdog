@@ -102,6 +102,39 @@ class PostgresFilterTests(unittest.TestCase):
         self.assertNotIn("int4.out", task.gold_patch)
         self.assertIn("formatting.c", task.gold_patch)
 
+    def test_harvest_split_does_not_need_sample_lists(self) -> None:
+        diff_path = Path(__file__).resolve().parent / "fixtures" / "pg_int4.diff"
+        diff_text = diff_path.read_text(encoding="utf-8")
+        core = require_core(load_cores(), "postgres")
+        change = ChangeView(
+            sha="04c25af21c02bf2c5152c3c8ab2ba877c231a598",
+            repository_id="postgres",
+            subject="Fix integer to_char() overflow with V format",
+            body="",
+            parent_count=1,
+            files=[],
+            pr_number=None,
+            base_sha="e96b27296bec1c6212874eceb394b4f8b7d06dcc",
+        )
+        task = compile_task(
+            change,
+            core,
+            diff_text,
+            "сообщение коммита",
+            "commit_message",
+            regress_split=True,
+            oracle_command="make -C src/test/regress check-tests TESTS={test}",
+        )
+        gold_paths = paths_in_diff(task.gold_patch)
+        test_paths = paths_in_diff(task.test_patch)
+        self.assertEqual(task.fail_to_pass, ["int4"])
+        self.assertIn("src/backend/utils/adt/formatting.c", gold_paths)
+        self.assertNotIn("src/test/regress/expected/int4.out", gold_paths)
+        self.assertNotIn("src/test/regress/sql/int4.sql", gold_paths)
+        self.assertIn("src/test/regress/expected/int4.out", test_paths)
+        self.assertIn("src/test/regress/sql/int4.sql", test_paths)
+        self.assertNotIn("src/backend/utils/adt/formatting.c", test_paths)
+
     def test_regress_tests_variable_uses_check_tests_target(self) -> None:
         command = "make -C src/test/regress check TESTS=union"
         self.assertEqual(
