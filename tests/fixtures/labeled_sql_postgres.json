@@ -1,5 +1,5 @@
 {
-  "description": "Ручная разметка 20 коммитов postgres до прогона SQL-фильтра. Метки expected не менять.",
+  "description": "Ручная разметка 20 коммитов postgres: код src/backend/ и изменённый expected/*.out. Метки поставлены до прогона фильтра и после него не меняются.",
   "changes": [
     {
       "sha": "1a846a555afb0e5f2008f3aefe8f77acbe6ffba6",
@@ -2518,8 +2518,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "регресс без src/backend/utils/adt"
+      "expected": "accept",
+      "human_reason": "код src/backend/ и expected/*.out"
     },
     {
       "sha": "4a2f5533f3ceb20727686ed5ef38107d6b295e33",
@@ -2560,8 +2560,8 @@
           "deletions": 1
         }
       ],
-      "expected": "reject",
-      "human_reason": "регресс без src/backend/utils/adt"
+      "expected": "accept",
+      "human_reason": "код src/backend/ и expected/*.out"
     },
     {
       "sha": "374522aa63af1187c15dd21db0b2c988b55c9a3a",
@@ -2590,8 +2590,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "регресс без src/backend/utils/adt"
+      "expected": "accept",
+      "human_reason": "код src/backend/ и expected/*.out"
     },
     {
       "sha": "9e17d25e79d4756be08b4a5521b4b58450217137",
@@ -2650,8 +2650,8 @@
           "deletions": 5
         }
       ],
-      "expected": "reject",
-      "human_reason": "парсер и регресс, нет adt"
+      "expected": "accept",
+      "human_reason": "код src/backend/parser и expected/*.out"
     },
     {
       "sha": "7a0aa99e51c7a3263e6ee45f19f270ddae430a92",

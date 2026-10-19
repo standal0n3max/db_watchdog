@@ -37,8 +37,8 @@ sample_candidates = []
 code_exclude = []
 test_suffixes = []
 generated_names = []
-# Срез SQL для --harvest. Закреплённые code_prefixes и test_prefixes не сужаются.
-sql_code_prefixes = ["extension/core_functions/"]
+# Код ядра для --harvest. Тесты остаются test/sql/. Закреплённые code_prefixes не сужаются.
+sql_code_prefixes = ["src/", "extension/core_functions/"]
 sql_test_prefixes = ["test/sql/"]
 sql_test_suffixes = []
 
@@ -73,7 +73,8 @@ sample_candidates = [
 code_exclude = []
 test_suffixes = []
 generated_names = []
-sql_code_prefixes = ["src/backend/utils/adt/"]
+# Код ядра для --harvest: src/backend/, не contrib и не src/test.
+sql_code_prefixes = ["src/backend/"]
 sql_test_prefixes = ["src/test/regress/"]
 sql_test_suffixes = []
 
@@ -106,6 +107,7 @@ sample_candidates = []
 code_exclude = ["sqlite3.c", "sqlite3.h"]
 test_suffixes = [".test"]
 generated_names = ["sqlite3.c", "sqlite3.h"]
-sql_code_prefixes = ["src/func.c", "src/date.c", "src/printf.c"]
+# Код ядра для --harvest: любой src/, кроме амальгамы. Тесты остаются test/*.test.
+sql_code_prefixes = ["src/"]
 sql_test_prefixes = ["test/"]
 sql_test_suffixes = [".test"]

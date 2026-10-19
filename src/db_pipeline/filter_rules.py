@@ -13,6 +13,7 @@ _FORMAT_SUBJECT = re.compile(
 _GENERATED_MIN_LINES = 500
 _GENERATED_MIN_SHARE = 0.5
 _DOC_LINE_CAP = 6
+MISSING_SQL_CODE_REASON = "нет правки SQL-кода"
 
 
 @beartype
@@ -58,7 +59,8 @@ def filter_candidate(
 
 @beartype
 def _filter_sql(change: ChangeView, core: CoreConfig) -> FilterDecision:
-    has_code = any(_matches_sql_prefix(item.path, core.sql_code_prefixes) for item in change.files)
+    # Префиксы ядра из sql_code_prefixes. Исключение амальгамы остаётся в _is_code_path.
+    has_code = any(_is_harvest_code(item.path, core) for item in change.files)
     has_test = any(_is_sql_test(item.path, core) for item in change.files)
     if not has_code or not has_test:
         return _missing_sql(has_code, has_test)
@@ -72,7 +74,7 @@ def _missing_sql(has_code: bool, has_test: bool) -> FilterDecision:
     if not has_code and not has_test:
         reason = "нет правки SQL-кода и нет правки SQL-тестов"
     elif not has_code:
-        reason = "нет правки SQL-кода"
+        reason = MISSING_SQL_CODE_REASON
     else:
         reason = "нет правки SQL-тестов"
     return FilterDecision(False, "missing_code_and_tests", reason)
@@ -228,6 +230,13 @@ def _has_code(files: list[FileChange], core: CoreConfig) -> bool:
 @beartype
 def _has_test(files: list[FileChange], core: CoreConfig) -> bool:
     return any(_is_test_path(item.path, core) for item in files)
+
+
+@beartype
+def _is_harvest_code(path: str, core: CoreConfig) -> bool:
+    if not _matches_sql_prefix(path, core.sql_code_prefixes):
+        return False
+    return _is_code_path(path, core)
 
 
 @beartype
