@@ -5,11 +5,30 @@ import unittest
 from pathlib import Path
 
 from db_pipeline.config import load_cores, require_core
-from db_pipeline.filter_rules import filter_candidate
+from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON, filter_candidate
 from db_pipeline.git_ops import select_harvest_rows
-from db_pipeline.models import ChangeView, FileChange
+from db_pipeline.journal import create_journal, harvest_known_shas, read_journal, write_json
+from db_pipeline.models import ChangeView, FileChange, change_to_dict
 from db_pipeline.sql_report import write_sql_labeled_report
-from db_pipeline.stages import read_cursor, write_cursor
+from db_pipeline.stages import StageResult, filter_stage, read_cursor, write_cursor
+
+
+def _ready(sha: str) -> StageResult:
+    return {
+        "status": "ready",
+        "repository_id": "sqlite",
+        "sha": sha,
+        "base_sha": "base",
+        "pr_number": "",
+        "instance_id": "",
+        "reason_code": "",
+        "reason": "",
+        "statement_source": "",
+        "task_path": "",
+        "oracle_status": "",
+        "run_path": "",
+        "detail": "harvest",
+    }
 
 
 def _change(core_id: str, subject: str, files: list[FileChange], sha: str = "sha") -> ChangeView:
@@ -188,6 +207,107 @@ class HarvestTests(unittest.TestCase):
                 matched, total = write_sql_labeled_report(core_id, data=Path(tmp))
             self.assertEqual(total, 20)
             self.assertGreaterEqual(matched, 16)
+
+    def test_missing_sql_code_without_oracle_is_not_known(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            skipped = "skip-sql"
+            tested = "no-test"
+            accepted = "accepted-sha"
+            create_journal(
+                root,
+                {
+                    "sha": skipped,
+                    "reason": MISSING_SQL_CODE_REASON,
+                    "oracle_status": "skipped",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": tested,
+                    "reason": "нет правки SQL-тестов",
+                    "oracle_status": "skipped",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": accepted,
+                    "reason": "есть правка SQL-кода и правка SQL-тестов",
+                    "oracle_status": "accepted",
+                },
+            )
+            known = harvest_known_shas(root)
+            self.assertNotIn(skipped, known)
+            self.assertIn(tested, known)
+            self.assertIn(accepted, known)
+
+    def test_accepted_sha_is_not_filtered_again(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "already-accepted"
+            create_journal(
+                root,
+                {
+                    "sha": sha,
+                    "repository_id": "sqlite",
+                    "decision": "accept",
+                    "reason_code": "accepted",
+                    "reason": "есть правка SQL-кода и правка SQL-тестов",
+                    "instance_id": "sqlite__sqlite-already",
+                    "pr_number": "",
+                    "recorded_at": "2026-10-18T00:00:00+00:00",
+                    "oracle_status": "accepted",
+                    "oracle_reason": "",
+                },
+            )
+            state = filter_stage(_ready(sha), root)
+            self.assertEqual(state["status"], "duplicate")
+            self.assertEqual(len(list((root / "journal").glob("*.json"))), 1)
+            self.assertEqual(len(list((root / "tasks").glob("*.json"))), 0)
+
+    def test_missing_sql_code_skip_is_reopened(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "reopen-sha"
+            create_journal(
+                root,
+                {
+                    "sha": sha,
+                    "repository_id": "sqlite",
+                    "decision": "reject",
+                    "reason_code": "missing_code_and_tests",
+                    "reason": MISSING_SQL_CODE_REASON,
+                    "instance_id": "",
+                    "pr_number": "",
+                    "recorded_at": "2026-10-18T00:00:00+00:00",
+                    "oracle_status": "skipped",
+                    "oracle_reason": "",
+                },
+            )
+            write_json(
+                root / "changes" / sha / "change.json",
+                change_to_dict(
+                    _change(
+                        "sqlite",
+                        "Fix union",
+                        [
+                            FileChange("src/select.c", 2, 0, "modified"),
+                            FileChange("test/unionall2.test", 2, 0, "modified"),
+                        ],
+                        sha,
+                    )
+                ),
+            )
+            state = filter_stage(_ready(sha), root)
+            self.assertEqual(state["status"], "accepted")
+            self.assertEqual(len(list((root / "journal").glob("*.json"))), 1)
+            record = read_journal(root, sha)
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("decision"), "accept")
+            self.assertEqual(record.get("oracle_status"), "pending")
 
     def test_cursor_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
