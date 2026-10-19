@@ -1,3 +1,8 @@
+"""Чтение JSON и проверка типов полей.
+
+``load_json_file`` возвращает ``object``. ``as_dict``, ``as_str``, ``as_int``, ``as_bool``, ``as_object_list``, ``as_str_list``, ``as_int_list`` требуют точный тип и при несовпадении бросают ``ConfigError`` с именем поля в ``label``. ``optional_int`` принимает целое или пустое значение.
+"""
+
 from __future__ import annotations
 
 import json

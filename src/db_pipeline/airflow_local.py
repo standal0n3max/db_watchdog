@@ -1,3 +1,8 @@
+"""Окружение локального Airflow для ручного прогона DAG.
+
+``local_airflow_env(root)`` возвращает словарь: ``AIRFLOW_HOME`` в ``data/airflow``, SequentialExecutor, примеры выключены, DAG из ``dags/``, база SQLite, порт ``WEB_PORT`` (8088). ``root`` по умолчанию — корень пакета.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

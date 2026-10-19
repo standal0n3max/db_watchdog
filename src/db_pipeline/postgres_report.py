@@ -1,3 +1,8 @@
+"""Сверка фильтра PostgreSQL: размеченная двадцатка и корпус образцов.
+
+``write_postgres_labeled_report(fixture, data)`` читает ``tests/fixtures/labeled_postgres.json``. ``write_postgres_corpus_report(data)`` берёт каждый JSON из каталога образцов и diff из ``pg-gym/stand/pg.git``. Оба отчёта зовут ``filter_candidate`` со списками ``solution`` и ``test_files`` образца. Журнал — ``data/postgres_labeled.jsonl`` или ``data/postgres_filter.jsonl``, заметки — ``data/postgres_filter_notes.md``. Метки фикстуры не правятся. Возвращает пару (сколько совпало, сколько строк).
+"""
+
 from __future__ import annotations
 
 import json

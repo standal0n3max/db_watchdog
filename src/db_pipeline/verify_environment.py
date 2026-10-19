@@ -1,3 +1,12 @@
+"""Оракул: годится ли коммит в датасет и верен ли ответ агента.
+
+Экземпляр принимается, если тесты из ``fail_to_pass`` падают на ``base_sha`` с ``test_patch`` и проходят после ``gold_patch``. ``verify_task(core, task, clone, data)`` выбирает программу по id ядра. DuckDB — бинарник ``build/release/test/unittest``. PostgreSQL и SQLite идут через общий ``_verify_shell``: сборка ``./configure --without-readline && make -j1`` или ``./configure && make testfixture``, команда теста с подстановкой ``{test}``. Таймауты сборки и теста — константы этого модуля, у каждого ядра свои.
+
+В образе только инструменты. Исходники ``base_sha`` монтируются снаружи. После первой успешной сборки команда дописывается в ``repos.toml``. У PostgreSQL перед вторым прогоном сносятся ``tmp_install`` и ``tmp_check``: иначе postmaster поднимается на каталоге данных прогона «до эталона».
+
+``rerun_tests`` проверяет diff агента по уже принятой задаче и в отбор коммита не входит.
+"""
+
 from __future__ import annotations
 
 import os

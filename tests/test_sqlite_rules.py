@@ -1,3 +1,8 @@
+"""Правила SQLite: префиксы ядра, амальгама и разрез патча.
+
+Двадцатка ``labeled_sqlite.json`` сверяется через ``write_sqlite_filter_report``. Отчёт уходит в переданный временный каталог.
+"""
+
 from __future__ import annotations
 
 import unittest

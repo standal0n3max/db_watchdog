@@ -1,3 +1,12 @@
+"""Решение, годится ли изменение в датасет.
+
+``filter_candidate(change, core, known_shas, solution_paths=None, test_paths=None, sql_only=False)``. Три ветки не смешиваются. Если переданы ``solution_paths`` или ``test_paths``, решение идёт по спискам образца PostgreSQL. Иначе при ``sql_only`` код и тест берутся из ``sql_code_prefixes`` и ``sql_test_prefixes``; у PostgreSQL ещё обязателен изменённый ``expected/*.out``, иначе код ``no_oracle_test``. Иначе граница — ``code_prefixes`` и ``test_prefixes``.
+
+До выбора ветки отсекаются: sha из ``known_shas``, merge (тема начинается с ``Merge``; коммит с двумя родителями сам по себе мусором не считается), revert, правка только амальгамы ``sqlite3.c`` или ``sqlite3.h``, массовая генерация, форматирование или переименование без тестов, только документация.
+
+Причина ровно ``нет правки SQL-кода`` (``MISSING_SQL_CODE_REASON``) журнал harvest может открыть снова, если оракул по этой записи не запускался.
+"""
+
 from __future__ import annotations
 
 import re

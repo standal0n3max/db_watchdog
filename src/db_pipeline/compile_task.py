@@ -1,3 +1,10 @@
+"""Сборка ``TaskInstance`` из изменения и diff коммита.
+
+``compile_task`` режет diff одним из трёх способов, они не смешиваются. ``regress_split`` — всё под ``src/test/regress/`` в ``test_patch``, остальной diff в ``gold_patch``, имя теста из ``expected/<имя>.out``. Списки ``gold_paths`` и ``test_paths`` — закреплённый образец PostgreSQL, файл вне обоих списков в патч не попадает. Иначе граница — префиксы и ``code_exclude`` из ``repos.toml``.
+
+``pass_to_pass`` всегда пустой. ``fail_to_pass`` можно передать явно, иначе имена берутся из тестового патча. ``instance_id`` — ``<репозиторий с /> на __>-<номер PR>`` или тот же префикс и первые 12 символов sha.
+"""
+
 from __future__ import annotations
 
 from beartype import beartype

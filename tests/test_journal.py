@@ -1,3 +1,8 @@
+"""Журнал не заводит вторую запись и второй JSON задачи на тот же sha.
+
+Проверки идут во временном каталоге: ``create_journal``, ``write_json_once`` и повторный ``filter_stage``.
+"""
+
 from __future__ import annotations
 
 import tempfile

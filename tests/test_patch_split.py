@@ -1,3 +1,8 @@
+"""Разрез diff PR 26419: тестовый файл остаётся в ``test_patch`` и не попадает в ``gold_patch``.
+
+Фикстура — ``tests/fixtures/pr_26419.diff``. Граница берётся из префиксов DuckDB в ``repos.toml``.
+"""
+
 from __future__ import annotations
 
 import unittest

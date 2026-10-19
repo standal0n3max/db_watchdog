@@ -1,3 +1,10 @@
+"""Постановка DuckDB: issue, описание PR или сообщение коммита.
+
+``choose_statement(subject, body, pr_number)`` возвращает текст, ``statement_source`` (``issue``, ``pr`` или ``commit_message``) и номер связанного issue. Issue ищется по ``Fixes #N`` в теме или теле, иначе по ``#N`` в теме. Текст читается с ``github.com/duckdb/duckdb``. Документация с текущего HEAD в условие не подмешивается.
+
+Для ``--harvest`` PostgreSQL и SQLite этот модуль текст не выбирает: там постановка — сообщение коммита.
+"""
+
 from __future__ import annotations
 
 import json

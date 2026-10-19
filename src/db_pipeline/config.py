@@ -1,3 +1,10 @@
+"""Чтение ``repos.toml`` в ``CoreConfig``.
+
+Поля строки ядра: ``id``, ``repository``, ``clone_url``, ``license``, ``oracle``, ``enabled``, ``code_prefixes``, ``test_prefixes``, ``generated_prefixes``, ``pinned_pr``, ``oracle_candidate_prs``, ``build_command``, ``oracle_command``, ``image``, ``branch``, ``clone_depth``, ``samples_dir``, ``pinned_sha``, ``candidate_shas``, ``sample_candidates``, ``code_exclude``, ``test_suffixes``, ``generated_names``, ``sql_code_prefixes``, ``sql_test_prefixes``, ``sql_test_suffixes``.
+
+Нет ключа — пустая строка, пустой список, ``branch`` ``main``, ``clone_depth`` 200. ``pinned_pr`` 0 хранится как ``None``. У включённого ядра префиксы кода и тестов не пустые. Путь по умолчанию — ``repos.toml`` в корне пакета.
+"""
+
 from __future__ import annotations
 
 import tomllib

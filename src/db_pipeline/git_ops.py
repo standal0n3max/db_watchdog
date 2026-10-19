@@ -1,3 +1,10 @@
+"""Клон ядра и чтение коммита: родители, diff, окно обхода.
+
+Клон частичный: ``--filter=blob:none``, одна ветка, глубина ``clone_depth`` из конфига. База diff — первый родитель.
+
+``harvest_window(clone, core, known, cursor, scan)`` читает ``git log --first-parent`` от новых к старым. ``cursor`` — последний уже просмотренный sha, следующее окно начинается сразу после него. Истории не хватает — ``git fetch --deepen``. У DuckDB в окно попадает только коммит, в теме которого есть ``(#номер)``. ``select_harvest_rows`` делает тот же отбор по уже прочитанным строкам.
+"""
+
 from __future__ import annotations
 
 import os

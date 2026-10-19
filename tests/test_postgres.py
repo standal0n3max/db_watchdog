@@ -1,3 +1,8 @@
+"""PostgreSQL: списки образца, команда ``check-tests``, повторный оракул.
+
+Двадцатка ``labeled_postgres.json`` и корпус образцов (сейчас 89) сверяются без Docker, отчёты пишутся во временный каталог. Здесь же разрез diff по ``solution`` и ``test_files``, подмена цели регресса и разбор отказа postmaster.
+"""
+
 from __future__ import annotations
 
 import tempfile

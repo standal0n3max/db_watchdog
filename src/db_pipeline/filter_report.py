@@ -1,3 +1,8 @@
+"""Сверка фильтра DuckDB с замороженной двадцаткой.
+
+``write_filter_report(fixture, data)`` читает ``tests/fixtures/labeled_changes.json``, гоняет ``filter_candidate`` без ``sql_only`` и пишет ``data/filter_sample.jsonl``. Расхождения — в ``data/filter_notes.md``. Метки фикстуры не правятся: если совпадение падает, правятся префиксы в ``repos.toml``. Возвращает пару (сколько совпало, сколько строк).
+"""
+
 from __future__ import annotations
 
 import json

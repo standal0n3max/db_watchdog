@@ -1,3 +1,8 @@
+"""Три включённых ядра в ``repos.toml`` и окружение локального Airflow.
+
+Проверяются id, лицензии, оракул, команды сборки и порт 8088. Сеть и Docker не нужны.
+"""
+
 from __future__ import annotations
 
 import unittest

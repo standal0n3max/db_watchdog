@@ -1,3 +1,10 @@
+"""Журнал просмотренных sha: одна запись ``data/journal/<sha>.json``.
+
+``create_journal`` создаёт файл через ``O_EXCL`` и возвращает ложь, если запись уже есть. ``write_json_once`` так же не перезаписывает JSON задачи или прогона. ``update_journal`` дописывает поля в существующую запись.
+
+``known_shas`` — все файлы журнала. ``harvest_known_shas`` из этого множества выпускает запись с причиной ровно ``нет правки SQL-кода`` и ``oracle_status`` ``skipped``, пустым или отсутствующим: такой sha harvest разбирает снова. ``accepted_count(data, repository_id)`` считает записи с ``oracle_status=accepted``.
+"""
+
 from __future__ import annotations
 
 import json
