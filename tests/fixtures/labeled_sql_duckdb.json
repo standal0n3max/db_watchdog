@@ -1,5 +1,5 @@
 {
-  "description": "Ручная разметка 20 коммитов duckdb до прогона SQL-фильтра. Метки expected не менять.",
+  "description": "Ручная разметка 20 коммитов duckdb: код src/ или extension/core_functions/ и тест test/sql/. Метки поставлены до прогона фильтра и после него не меняются.",
   "changes": [
     {
       "sha": "2666f35707b758621f7b4e6e9694be35b41c10b5",
@@ -4762,8 +4762,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "есть src и test/sql, нет extension/core_functions"
+      "expected": "accept",
+      "human_reason": "код src/ и тест test/sql"
     },
     {
       "sha": "3b3312a963c693efe6bcaef4ee4484b4adc17200",
@@ -4798,8 +4798,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "есть src и test/sql, нет extension/core_functions"
+      "expected": "accept",
+      "human_reason": "код src/ и тест test/sql"
     },
     {
       "sha": "a770db1197ec428f11d7b9529c66389b4e40c87d",
@@ -4822,8 +4822,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "есть src и test/sql, нет extension/core_functions"
+      "expected": "accept",
+      "human_reason": "код src/ и тест test/sql"
     },
     {
       "sha": "638b09261a334feb2f7deb742fe3996db3c974b1",
@@ -5008,8 +5008,8 @@
           "deletions": 3
         }
       ],
-      "expected": "reject",
-      "human_reason": "нет extension/core_functions"
+      "expected": "accept",
+      "human_reason": "код src/ и тест test/sql"
     },
     {
       "sha": "edd0259ec0a6e1b1269e7a86e042504f1fdddc84",
@@ -5962,8 +5962,8 @@
           "deletions": 1
         }
       ],
-      "expected": "reject",
-      "human_reason": "правка каталога, нет пары SQL-код и test/sql"
+      "expected": "accept",
+      "human_reason": "код src/ и тест test/sql/constraints"
     }
   ]
 }
