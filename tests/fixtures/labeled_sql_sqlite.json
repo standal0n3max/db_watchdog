@@ -1,5 +1,5 @@
 {
-  "description": "Ручная разметка 20 коммитов sqlite до прогона SQL-фильтра. Метки expected не менять.",
+  "description": "Ручная разметка 20 коммитов sqlite: код src/ кроме амальгамы и test/*.test. Метки поставлены до прогона фильтра и после него не меняются.",
   "changes": [
     {
       "sha": "3bce1260e7ef31b6b7bdde9d3781eb1264d68f37",
@@ -754,8 +754,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "select.c и test, нет func.c, date.c, printf.c"
+      "expected": "accept",
+      "human_reason": "src/select.c и test/unionall2.test"
     },
     {
       "sha": "d0fe192fa13a59a5fa6365c8e03d8f3b3d944851",

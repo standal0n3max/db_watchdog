@@ -24,7 +24,16 @@ from db_pipeline.git_ops import (
     pr_number_from_subject,
     resolve_pr_sha,
 )
-from db_pipeline.journal import create_journal, known_shas, read_journal, update_journal, write_json, write_json_once
+from db_pipeline.journal import (
+    create_journal,
+    harvest_known_shas,
+    known_shas,
+    read_journal,
+    reopen_missing_sql_code,
+    update_journal,
+    write_json,
+    write_json_once,
+)
 from db_pipeline.models import (
     ChangeView,
     TaskInstance,
@@ -183,11 +192,11 @@ def run_harvest(
         if not core.enabled:
             raise PipelineError("harvest", f"ядро {core.id} выключено")
         if len(core.sql_code_prefixes) == 0 or len(core.sql_test_prefixes) == 0:
-            raise PipelineError("harvest", "в конфиге нет SQL-префиксов")
+            raise PipelineError("harvest", "в конфиге нет префиксов ядра")
         clone = _clone_path(root, core)
         ensure_origin_branch(core, clone)
         cursor = read_cursor(root, core.id)
-        window = harvest_window(clone, core, known_shas(root), cursor, scan)
+        window = harvest_window(clone, core, harvest_known_shas(root), cursor, scan)
         if len(window) == 0:
             _fail(summary, "empty_window", "в окне нет новых коммитов")
             return write_record(summary, root)
@@ -283,7 +292,10 @@ def filter_stage(state: StageResult, data: Path | None = None) -> StageResult:
     if state["status"] != "ready":
         return state
     sha = state["sha"]
-    if read_journal(root, sha) is not None:
+    existing = read_journal(root, sha)
+    harvest = state["detail"] == "harvest"
+    reopen = harvest and existing is not None and reopen_missing_sql_code(existing)
+    if existing is not None and not reopen:
         state["status"] = "duplicate"
         state["reason_code"] = "already_in_journal"
         state["reason"] = "sha уже есть в журнале"
@@ -291,15 +303,16 @@ def filter_stage(state: StageResult, data: Path | None = None) -> StageResult:
     try:
         core = _core_of(state)
         change = _load_change(root, sha)
-        harvest = state["detail"] == "harvest"
         if harvest:
             solution_paths, test_paths = None, None
+            seen = harvest_known_shas(root)
         else:
             solution_paths, test_paths = _sample_lists(root, core, sha)
+            seen = known_shas(root)
         decision = filter_candidate(
             change,
             core,
-            known_shas(root),
+            seen,
             solution_paths,
             test_paths,
             harvest,
@@ -312,22 +325,29 @@ def filter_stage(state: StageResult, data: Path | None = None) -> StageResult:
         else:
             state["status"] = "rejected"
             decision_name = "reject"
-        created = create_journal(
-            root,
-            {
-                "sha": sha,
-                "repository_id": state["repository_id"],
-                "decision": decision_name,
-                "reason_code": decision.reason_code,
-                "reason": decision.reason,
-                "instance_id": "",
-                "pr_number": state["pr_number"],
-                "sample": state["detail"],
-                "recorded_at": _now(),
-                "oracle_status": "pending" if decision.accept else "skipped",
-                "oracle_reason": "",
-            },
-        )
+        journal_fields: dict[str, object] = {
+            "decision": decision_name,
+            "reason_code": decision.reason_code,
+            "reason": decision.reason,
+            "sample": state["detail"],
+            "oracle_status": "pending" if decision.accept else "skipped",
+            "oracle_reason": "",
+        }
+        if reopen:
+            update_journal(root, sha, journal_fields)
+            created = True
+        else:
+            created = create_journal(
+                root,
+                {
+                    "sha": sha,
+                    "repository_id": state["repository_id"],
+                    "instance_id": "",
+                    "pr_number": state["pr_number"],
+                    "recorded_at": _now(),
+                    **journal_fields,
+                },
+            )
         if not created:
             state["status"] = "duplicate"
             state["reason_code"] = "already_in_journal"

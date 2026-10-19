@@ -7,6 +7,7 @@ from pathlib import Path
 from beartype import beartype
 
 from db_pipeline.errors import PipelineError
+from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON
 from db_pipeline.parsing import as_dict, load_json_file
 
 
@@ -21,6 +22,34 @@ def known_shas(data: Path) -> set[str]:
     if not folder.exists():
         return set()
     return {path.stem for path in folder.glob("*.json")}
+
+
+@beartype
+def harvest_known_shas(data: Path) -> set[str]:
+    # Пропуск «нет правки SQL-кода» без оракула можно разобрать снова.
+    # Принятые, отказы оракула, merge, документация и «нет теста» остаются известными.
+    folder = data / "journal"
+    if not folder.exists():
+        return set()
+    known: set[str] = set()
+    for path in folder.glob("*.json"):
+        record = as_dict(load_json_file(path), "journal")
+        if reopen_missing_sql_code(record):
+            continue
+        sha = record.get("sha")
+        if isinstance(sha, str) and sha != "":
+            known.add(sha)
+        else:
+            known.add(path.stem)
+    return known
+
+
+@beartype
+def reopen_missing_sql_code(record: dict[str, object]) -> bool:
+    if record.get("reason") != MISSING_SQL_CODE_REASON:
+        return False
+    status = record.get("oracle_status")
+    return status in ("skipped", "", None)
 
 
 @beartype

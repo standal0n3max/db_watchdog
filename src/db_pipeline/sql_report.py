@@ -55,7 +55,12 @@ def write_sql_labeled_report(
         lines.append(json.dumps(record, ensure_ascii=False))
     (root / f"{core_id}_sql_filter.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     notes = root / f"{core_id}_sql_filter_notes.md"
-    header = f"# Фильтр SQL, {core_id}\n\nСовпадение с замороженной разметкой: {matched} из {len(rows)}.\n"
+    # Совпадение с замороженной двадцаткой «код ядра и прежний тест».
+    # Узкий срез func.c, adt/ и core_functions/ больше не измеряется.
+    header = (
+        f"# Фильтр ядра, {core_id}\n\n"
+        f"Совпадение с замороженной разметкой: {matched} из {len(rows)}.\n"
+    )
     if len(mismatches) == 0:
         notes.write_text(header + "\nРасхождений нет.\n", encoding="utf-8")
     else:
