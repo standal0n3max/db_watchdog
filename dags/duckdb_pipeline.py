@@ -1,4 +1,10 @@
 # pyright: reportUnknownVariableType=false
+"""Закреплённый DAG DuckDB: один PR из ``repos.toml``, расписание выключено.
+
+Граф TaskFlow вызывает те же стадии пакета: ``watchRepos`` → ``fetchChange`` → ``filterCandidate`` → ``compileTask`` → ``verifyEnvironment`` → ``runOpenCode`` → ``writeRecord``. ``watch_repos`` без id ядра берёт DuckDB. Обход истории этим DAG не запускается: он идёт командой ``--harvest``.
+
+``cast`` не меняет значение. Airflow подставляет XCom, а проверка типов видит словарь ``StageResult``.
+"""
 from __future__ import annotations
 
 from typing import cast

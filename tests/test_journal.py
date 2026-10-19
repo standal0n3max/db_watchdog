@@ -1,10 +1,15 @@
+"""Журнал не заводит вторую запись и второй JSON задачи на тот же sha.
+
+Проверки идут во временном каталоге: ``create_journal``, ``write_json_once`` и повторный ``filter_stage``.
+"""
+
 from __future__ import annotations
 
 import tempfile
 import unittest
 from pathlib import Path
 
-from db_pipeline.journal import create_journal, known_shas, write_json_once
+from db_pipeline.journal import accepted_count, create_journal, known_shas, write_json_once
 from db_pipeline.stages import filter_stage
 
 
@@ -55,6 +60,36 @@ class JournalTests(unittest.TestCase):
             self.assertEqual(known_shas(data), {sha})
             again = create_journal(data, {"sha": sha})
             self.assertFalse(again)
+
+    def test_accepted_count_reads_oracle_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            create_journal(
+                data,
+                {
+                    "sha": "aa",
+                    "repository_id": "sqlite",
+                    "oracle_status": "accepted",
+                },
+            )
+            create_journal(
+                data,
+                {
+                    "sha": "bb",
+                    "repository_id": "sqlite",
+                    "oracle_status": "rejected",
+                },
+            )
+            create_journal(
+                data,
+                {
+                    "sha": "cc",
+                    "repository_id": "duckdb",
+                    "oracle_status": "accepted",
+                },
+            )
+            self.assertEqual(accepted_count(data, "sqlite"), 1)
+            self.assertEqual(accepted_count(data, "postgres"), 0)
 
 
 if __name__ == "__main__":

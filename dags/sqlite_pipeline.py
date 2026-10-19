@@ -1,4 +1,10 @@
 # pyright: reportUnknownVariableType=false
+"""Закреплённый DAG SQLite: sha из ``repos.toml``, расписание выключено.
+
+Граф TaskFlow вызывает те же стадии пакета. ``watchRepos`` передаёт ``core_id="sqlite"``. Обход истории этим DAG не запускается: он идёт командой ``--harvest``.
+
+``cast`` не меняет значение. Airflow подставляет XCom, а проверка типов видит словарь ``StageResult``.
+"""
 from __future__ import annotations
 
 from typing import cast

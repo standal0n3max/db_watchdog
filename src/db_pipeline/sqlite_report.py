@@ -1,3 +1,8 @@
+"""Сверка фильтра SQLite с замороженной двадцаткой.
+
+``write_sqlite_filter_report(fixture, data)`` читает ``tests/fixtures/labeled_sqlite.json`` и гоняет ``filter_candidate`` по префиксам ``repos.toml``. Пишет ``data/sqlite_filter.jsonl`` и ``data/sqlite_filter_notes.md``. Метки фикстуры не правятся. Возвращает пару (сколько совпало, сколько строк).
+"""
+
 from __future__ import annotations
 
 import json

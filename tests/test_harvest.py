@@ -1,3 +1,8 @@
+"""Обход истории: окно, курсор и повторный разбор пропуска «нет правки SQL-кода».
+
+SQL-двадцатки трёх ядер (``labeled_sql_duckdb.json``, ``labeled_sql_postgres.json``, ``labeled_sql_sqlite.json``) сверяются с ``sql_only``. Отчёты пишутся во временный каталог.
+"""
+
 from __future__ import annotations
 
 import tempfile

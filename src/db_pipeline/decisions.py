@@ -1,3 +1,8 @@
+"""Журнал фактических решений среды: ``data/decisions.md``.
+
+``ensure_decisions`` создаёт файл с шапкой один раз. Уже лежащий файл не перезаписывается. ``append_decision`` дописывает команду сборки, ошибку среды или заметку оракула.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

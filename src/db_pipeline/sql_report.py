@@ -1,3 +1,8 @@
+"""Сверка фильтра ядра с замороженной SQL-двадцаткой.
+
+``write_sql_labeled_report(core_id, fixture, data)`` читает ``tests/fixtures/labeled_sql_<core_id>.json`` и вызывает ``filter_candidate`` с ``sql_only=True``. Пишет ``data/<core_id>_sql_filter.jsonl`` и заметки ``data/<core_id>_sql_filter_notes.md``. Метки фикстуры не правятся. Возвращает пару (сколько совпало, сколько строк).
+"""
+
 from __future__ import annotations
 
 import json

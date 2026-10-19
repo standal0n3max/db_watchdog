@@ -1,3 +1,8 @@
+"""Двадцатка DuckDB: фильтр совпадает с замороженными метками ``labeled_changes.json``.
+
+Отчёт пишется в настоящий ``data/filter_sample.jsonl``, не во временный каталог. Отдельно проверяются merge и массовая генерация.
+"""
+
 from __future__ import annotations
 
 import unittest

@@ -1,3 +1,16 @@
+"""Стадии цепочки и два способа запуска: закреплённый проход и ``--harvest``.
+
+Общее состояние — ``StageResult``. Поля: ``status``, ``repository_id``, ``sha``, ``base_sha``, ``pr_number``, ``instance_id``, ``reason_code``, ``reason``, ``statement_source``, ``task_path``, ``oracle_status``, ``run_path``, ``detail``.
+
+``run_all(data, pr_number, core_id)`` идёт ``watch_repos`` → ``fetch_change`` → ``filter_stage`` → ``compile_stage`` → ``verify_stage`` → ``opencode_stage`` → ``write_record``. Стадия с уже неподходящим ``status`` возвращает состояние как есть. Отказ фильтра или оракула всё равно доходит до ``write_record``.
+
+``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``.
+
+Закреплённый ``watch_repos``: DuckDB берёт PR (``pinned_pr`` или аргумент ``pr_number``), PostgreSQL — следующий образец pg-gym, пока отказов оракула меньше ``ORACLE_FAILURE_LIMIT`` (3), SQLite — ``pinned_sha``. Курсор обхода лежит в ``data/cursors/<core>.json``.
+
+``reverify_postgres`` заново гоняет оракул по уже записанным JSON и второй файл задачи не создаёт.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

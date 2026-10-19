@@ -1,3 +1,10 @@
+"""Образцы PostgreSQL из pg-gym: закреплённый запуск читает их вместо истории.
+
+``PostgresSample``: ``name``, ``sha``, ``parent``, ``subject``, ``goal``, ``solution_paths``, ``test_files``, ``oracle_tests``, ``oracle_command``. Каталог задаётся ``samples_dir`` в ``repos.toml`` и режется относительно корня пакета, если путь не абсолютный.
+
+``bundled_git_dir`` ищет bare-клон на три уровня выше каталога образцов: ``pg-gym/stand/pg.git``. ``limit_regress_command`` меняет цель ``check`` на ``check-tests``: в дереве REL_17 ``check`` берёт ``parallel_schedule`` и игнорирует ``TESTS``.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

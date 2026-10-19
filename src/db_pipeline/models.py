@@ -1,3 +1,10 @@
+"""Модель изменения, решения фильтра и экземпляра задачи.
+
+``FileChange`` — путь, добавленные и удалённые строки, статус git. ``ChangeView`` — sha, id ядра, тема, тело, число родителей, файлы, номер PR, ``base_sha``. ``FilterDecision`` — ``accept``, ``reason_code``, ``reason``. ``TaskInstance`` — поля JSON задачи: ``instance_id``, ``repository``, ``license``, ``base_sha``, ``statement``, ``statement_source``, ``test_patch``, ``gold_patch``, ``fail_to_pass``, ``pass_to_pass``, ``oracle``, ``reject_reason``, плюс ``head_sha``, ``pr_number`` и ``oracle_command``.
+
+``statement_source`` — ``issue``, ``pr`` или ``commit_message``. ``oracle_command`` в старом JSON может отсутствовать и тогда читается как пустая строка.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

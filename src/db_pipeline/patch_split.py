@@ -1,3 +1,14 @@
+"""Разрезание unified diff на ``test_patch`` и ``gold_patch``.
+
+``split_unified_diff(diff_text, code_prefixes, test_prefixes, test_suffixes, code_exclude)`` — граница по префиксам. Имя из ``code_exclude`` выбрасывается. Если заданы ``test_suffixes``, тест обязан ещё и заканчиваться одним из них.
+
+``split_by_paths(diff_text, gold_paths, test_paths)`` — точное совпадение пути со списком образца. Путь вне обоих списков пропадает.
+
+``split_regress_diff`` — граница harvest PostgreSQL: ``src/test/regress/`` в тест, любой другой путь в скрытый эталон. ``regress_test_names`` берёт имя из ``expected/<имя>.out``.
+
+Путь читается из заголовка ``diff --git a/<path> b/...``. Кусок без такого заголовка пути не имеет.
+"""
+
 from __future__ import annotations
 
 from beartype import beartype

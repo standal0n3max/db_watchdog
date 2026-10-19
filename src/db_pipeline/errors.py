@@ -1,3 +1,8 @@
+"""Ошибки сборщика с кодом причины для журнала.
+
+``PipelineError(reason_code, reason)`` несёт оба поля. ``ConfigError`` — тот же тип с кодом ``config``.
+"""
+
 from __future__ import annotations
 
 
