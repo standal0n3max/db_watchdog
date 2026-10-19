@@ -25,6 +25,19 @@ def known_shas(data: Path) -> set[str]:
 
 
 @beartype
+def accepted_count(data: Path, repository_id: str) -> int:
+    folder = data / "journal"
+    if not folder.exists():
+        return 0
+    total = 0
+    for path in folder.glob("*.json"):
+        record = as_dict(load_json_file(path), "journal")
+        if record.get("repository_id") == repository_id and record.get("oracle_status") == "accepted":
+            total += 1
+    return total
+
+
+@beartype
 def harvest_known_shas(data: Path) -> set[str]:
     # Пропуск «нет правки SQL-кода» без оракула можно разобрать снова.
     # Принятые, отказы оракула, merge, документация и «нет теста» остаются известными.
