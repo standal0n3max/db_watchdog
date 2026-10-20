@@ -45,7 +45,7 @@ from db_pipeline.journal import (
     harvest_known_shas,
     known_shas,
     read_journal,
-    reopen_missing_sql_code,
+    reopen_harvest_record,
     update_journal,
     write_json,
     write_json_once,
@@ -321,7 +321,7 @@ def filter_stage(state: StageResult, data: Path | None = None) -> StageResult:
     sha = state["sha"]
     existing = read_journal(root, sha)
     harvest = state["detail"] == "harvest"
-    reopen = harvest and existing is not None and reopen_missing_sql_code(existing)
+    reopen = harvest and existing is not None and reopen_harvest_record(existing)
     if existing is not None and not reopen:
         state["status"] = "duplicate"
         state["reason_code"] = "already_in_journal"

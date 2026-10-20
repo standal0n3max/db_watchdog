@@ -26,7 +26,7 @@ generated_prefixes = [
 pinned_pr = 26419
 oracle_candidate_prs = [26419, 26057, 26460]
 # Пустые, пока первая успешная сборка не запишет фактические команды.
-build_command = "CMAKE_BUILD_PARALLEL_LEVEL=1 make release DISABLE_SHELL=1 DISABLE_PARQUET=1 CMAKE_VARS_BUILD=-DDUCKDB_RELEASE_LINK_JOBS=1"
+build_command = "CMAKE_BUILD_PARALLEL_LEVEL=3 make release DISABLE_SHELL=1 DISABLE_PARQUET=1 CMAKE_VARS_BUILD=-DDUCKDB_RELEASE_LINK_JOBS=1"
 oracle_command = "build/release/test/unittest {test}"
 image = "db-pipeline-duckdb-tools:local"
 branch = "main"
@@ -39,7 +39,13 @@ test_suffixes = []
 generated_names = []
 # Код ядра для --harvest. Тесты остаются test/sql/. Закреплённые code_prefixes не сужаются.
 sql_code_prefixes = ["src/", "extension/core_functions/"]
-sql_test_prefixes = ["test/sql/"]
+sql_test_prefixes = [
+    "test/sql/",
+    "test/optimizer/",
+    "test/api/",
+    "test/common/",
+    "test/issues/",
+]
 sql_test_suffixes = []
 
 [[cores]]
@@ -57,7 +63,7 @@ test_prefixes = ["src/test/"]
 generated_prefixes = []
 pinned_pr = 0
 oracle_candidate_prs = []
-build_command = "./configure --without-readline && make -j1"
+build_command = "./configure --without-readline && make -j3"
 oracle_command = "make -C src/test/regress check-tests TESTS={test}"
 image = "db-pipeline-postgres-tools:local"
 branch = "master"

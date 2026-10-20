@@ -4,7 +4,7 @@
 
 До выбора ветки отсекаются: sha из ``known_shas``, merge (тема начинается с ``Merge``; коммит с двумя родителями сам по себе мусором не считается), revert, правка только амальгамы ``sqlite3.c`` или ``sqlite3.h``, массовая генерация, форматирование или переименование без тестов, только документация.
 
-Причина ровно ``нет правки SQL-кода`` (``MISSING_SQL_CODE_REASON``) журнал harvest может открыть снова, если оракул по этой записи не запускался.
+Причины повторного разбора harvest вынесены в константы: ``нет правки SQL-кода`` для всех ядер и ``нет правки SQL-тестов`` для DuckDB после расширения тестовых префиксов.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ _GENERATED_MIN_LINES = 500
 _GENERATED_MIN_SHARE = 0.5
 _DOC_LINE_CAP = 6
 MISSING_SQL_CODE_REASON = "нет правки SQL-кода"
+MISSING_SQL_TEST_REASON = "нет правки SQL-тестов"
 
 
 @beartype
@@ -85,7 +86,7 @@ def _missing_sql(has_code: bool, has_test: bool) -> FilterDecision:
     elif not has_code:
         reason = MISSING_SQL_CODE_REASON
     else:
-        reason = "нет правки SQL-тестов"
+        reason = MISSING_SQL_TEST_REASON
     return FilterDecision(False, "missing_code_and_tests", reason)
 
 

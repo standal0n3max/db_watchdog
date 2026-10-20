@@ -1,6 +1,6 @@
 """Оракул: годится ли коммит в датасет и верен ли ответ агента.
 
-Экземпляр принимается, если тесты из ``fail_to_pass`` падают на ``base_sha`` с ``test_patch`` и проходят после ``gold_patch``. ``verify_task(core, task, clone, data)`` выбирает программу по id ядра. DuckDB — бинарник ``build/release/test/unittest``. PostgreSQL и SQLite идут через общий ``_verify_shell``: сборка ``./configure --without-readline && make -j1`` или ``./configure && make testfixture``, команда теста с подстановкой ``{test}``. Таймауты сборки и теста — константы этого модуля, у каждого ядра свои.
+Экземпляр принимается, если тесты из ``fail_to_pass`` падают на ``base_sha`` с ``test_patch`` и проходят после ``gold_patch``. ``verify_task(core, task, clone, data)`` выбирает программу по id ядра. DuckDB — бинарник ``build/release/test/unittest``. PostgreSQL и SQLite идут через общий ``_verify_shell``: сборка ``./configure --without-readline && make -j3`` или ``./configure && make testfixture``, команда теста с подстановкой ``{test}``. Таймауты сборки и теста — константы этого модуля, у каждого ядра свои.
 
 В образе только инструменты. Исходники ``base_sha`` монтируются снаружи. После первой успешной сборки команда дописывается в ``repos.toml``. У PostgreSQL перед вторым прогоном сносятся ``tmp_install`` и ``tmp_check``: иначе postmaster поднимается на каталоге данных прогона «до эталона».
 
@@ -35,14 +35,13 @@ SQLITE_TEST_TIMEOUT_SECONDS = 900
 # Команда из Makefile репозитория. В repos.toml попадает только после того,
 # как сборка реально подняла бинарник тестов.
 # Unity-сборка — штатный режим DuckDB: без неё GCC 13 не собирает sort.
-# Один компилятор и один линкер: в Docker 7.6 ГиБ, параллельный unity-build убивает cc1plus.
+# Три компилятора при 16 ГиБ Docker; линковка остаётся однопоточной.
 # DISABLE_PARQUET: тесты кандидатов его не требуют.
 DEFAULT_BUILD_COMMAND = (
-    "CMAKE_BUILD_PARALLEL_LEVEL=1 make release DISABLE_SHELL=1 DISABLE_PARQUET=1 "
+    "CMAKE_BUILD_PARALLEL_LEVEL=3 make release DISABLE_SHELL=1 DISABLE_PARQUET=1 "
     "CMAKE_VARS_BUILD=-DDUCKDB_RELEASE_LINK_JOBS=1"
 )
-# Один процесс компиляции, пока первая сборка не показала, что памяти хватает.
-POSTGRES_BUILD_COMMAND = "./configure --without-readline && make -j1"
+POSTGRES_BUILD_COMMAND = "./configure --without-readline && make -j3"
 POSTGRES_ORACLE_TEMPLATE = "make -C src/test/regress check TESTS={test}"
 SQLITE_BUILD_COMMAND = "./configure && make testfixture"
 SQLITE_ORACLE_TEMPLATE = "./testfixture {test}"

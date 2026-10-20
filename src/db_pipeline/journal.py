@@ -2,7 +2,7 @@
 
 ``create_journal`` создаёт файл через ``O_EXCL`` и возвращает ложь, если запись уже есть. ``write_json_once`` так же не перезаписывает JSON задачи или прогона. ``update_journal`` дописывает поля в существующую запись.
 
-``known_shas`` — все файлы журнала. ``harvest_known_shas`` из этого множества выпускает запись с причиной ровно ``нет правки SQL-кода`` и ``oracle_status`` ``skipped``, пустым или отсутствующим: такой sha harvest разбирает снова. ``accepted_count(data, repository_id)`` считает записи с ``oracle_status=accepted``.
+``known_shas`` — все файлы журнала. ``harvest_known_shas`` из этого множества выпускает записи, которые надо разобрать повторно: ``нет правки SQL-кода`` без запуска оракула для любого ядра и ``нет правки SQL-тестов`` без запуска оракула для DuckDB. ``accepted_count(data, repository_id)`` считает записи с ``oracle_status=accepted``.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 from beartype import beartype
 
 from db_pipeline.errors import PipelineError
-from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON
+from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON, MISSING_SQL_TEST_REASON
 from db_pipeline.parsing import as_dict, load_json_file
 
 
@@ -54,7 +54,7 @@ def harvest_known_shas(data: Path) -> set[str]:
     known: set[str] = set()
     for path in folder.glob("*.json"):
         record = as_dict(load_json_file(path), "journal")
-        if reopen_missing_sql_code(record):
+        if reopen_harvest_record(record):
             continue
         sha = record.get("sha")
         if isinstance(sha, str) and sha != "":
@@ -67,6 +67,18 @@ def harvest_known_shas(data: Path) -> set[str]:
 @beartype
 def reopen_missing_sql_code(record: dict[str, object]) -> bool:
     if record.get("reason") != MISSING_SQL_CODE_REASON:
+        return False
+    status = record.get("oracle_status")
+    return status in ("skipped", "", None)
+
+
+@beartype
+def reopen_harvest_record(record: dict[str, object]) -> bool:
+    if reopen_missing_sql_code(record):
+        return True
+    if record.get("repository_id") != "duckdb":
+        return False
+    if record.get("reason") != MISSING_SQL_TEST_REASON:
         return False
     status = record.get("oracle_status")
     return status in ("skipped", "", None)
