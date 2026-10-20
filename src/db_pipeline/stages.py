@@ -4,15 +4,18 @@
 
 ``run_all(data, pr_number, core_id)`` идёт ``watch_repos`` → ``fetch_change`` → ``filter_stage`` → ``compile_stage`` → ``verify_stage`` → ``opencode_stage`` → ``write_record``. Стадия с уже неподходящим ``status`` возвращает состояние как есть. Отказ фильтра или оракула всё равно доходит до ``write_record``.
 
-``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``.
+``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``. После записи журнала ``discard_workdir`` стирает ``data/work/<sha>``.
 
-Закреплённый ``watch_repos``: DuckDB берёт PR (``pinned_pr`` или аргумент ``pr_number``), PostgreSQL — следующий образец pg-gym, пока отказов оракула меньше ``ORACLE_FAILURE_LIMIT`` (3), SQLite — ``pinned_sha``. Курсор обхода лежит в ``data/cursors/<core>.json``.
+Закреплённый ``watch_repos``: DuckDB берёт PR (``pinned_pr`` или аргумент ``pr_number``), PostgreSQL — следующий образец pg-gym, пока отказов оракула меньше ``ORACLE_FAILURE_LIMIT`` (3), SQLite — ``pinned_sha``. Курсор обхода лежит в ``data/cursors/<core>.json``. Закреплённый проход дерево не стирает: следом ``opencode_stage`` делает ``git reset`` в том же каталоге.
+
+Airflow пока не на сценарии ``--harvest``. Когда DAG переведут на тот же обход, удаление ``data/work/<sha>`` должно достаться им через ``run_harvest`` и ``detail == "harvest"``, а не второй копией в файлах DAG.
 
 ``reverify_postgres`` заново гоняет оракул по уже записанным JSON и второй файл задачи не создаёт.
 """
 
 from __future__ import annotations
 
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
@@ -106,6 +109,7 @@ def reverify_postgres(data: Path | None = None) -> StageResult:
             state["statement_source"] = task.statement_source
             result = verify_task(core, task, _clone_path(root, core), root)
             save_oracle_result(root, sha, task_path, task, result)
+            discard_workdir(root, sha)
             state["oracle_status"] = result.status
             state["reason_code"] = result.reason_code
             state["reason"] = result.reason
@@ -167,6 +171,16 @@ def save_oracle_result(
     else:
         payload["reject_reason"] = result.reason
     write_json(task_path, payload)
+
+
+@beartype
+def discard_workdir(root: Path, head_sha: str) -> None:
+    if head_sha == "":
+        return
+    work = root / "work" / head_sha
+    if not work.is_dir():
+        return
+    shutil.rmtree(work)
 
 
 @beartype
@@ -433,6 +447,7 @@ def verify_stage(state: StageResult, data: Path | None = None) -> StageResult:
     root = resolve_data(data)
     if state["status"] != "accepted":
         return state
+    harvest = state["detail"] == "harvest"
     try:
         task = task_from_dict(load_json_file(Path(state["task_path"])))
         core = _core_of(state)
@@ -465,6 +480,11 @@ def verify_stage(state: StageResult, data: Path | None = None) -> StageResult:
             state["sha"],
             {"oracle_status": "rejected", "oracle_reason": str(exc)},
         )
+        if harvest:
+            discard_workdir(root, state["sha"])
+        return state
+    if harvest:
+        discard_workdir(root, task.head_sha)
     return state
 
 
