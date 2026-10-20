@@ -8,6 +8,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from db_pipeline.config import load_cores, require_core
 from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON, filter_candidate
@@ -15,7 +16,8 @@ from db_pipeline.git_ops import select_harvest_rows
 from db_pipeline.journal import create_journal, harvest_known_shas, read_journal, write_json
 from db_pipeline.models import ChangeView, FileChange, change_to_dict
 from db_pipeline.sql_report import write_sql_labeled_report
-from db_pipeline.stages import StageResult, filter_stage, read_cursor, write_cursor
+from db_pipeline.stages import StageResult, discard_workdir, filter_stage, read_cursor, verify_stage, write_cursor
+from db_pipeline.verify_environment import OracleResult
 
 
 def _ready(sha: str) -> StageResult:
@@ -320,6 +322,108 @@ class HarvestTests(unittest.TestCase):
             self.assertEqual(read_cursor(root, "sqlite"), "")
             write_cursor(root, "sqlite", "abc")
             self.assertEqual(read_cursor(root, "sqlite"), "abc")
+
+    def test_harvest_verify_removes_workdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "harvest-sha"
+            state = _accepted_oracle_state(root, sha, "harvest")
+            marker = root / "work" / sha / "build.o"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("draft", encoding="utf-8")
+            with patch("db_pipeline.stages.verify_task", return_value=_accepted_oracle()):
+                result = verify_stage(state, root)
+            record = read_journal(root, sha)
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("oracle_status"), "accepted")
+            self.assertEqual(result["oracle_status"], "accepted")
+            self.assertFalse(marker.parent.exists())
+
+    def test_pinned_verify_keeps_workdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "pinned-sha"
+            state = _accepted_oracle_state(root, sha, "pinned")
+            marker = root / "work" / sha / "build.o"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("draft", encoding="utf-8")
+            with patch("db_pipeline.stages.verify_task", return_value=_accepted_oracle()):
+                verify_stage(state, root)
+            record = read_journal(root, sha)
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("oracle_status"), "accepted")
+            self.assertEqual(marker.read_text(encoding="utf-8"), "draft")
+
+    def test_missing_workdir_is_not_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "missing-sha"
+            state = _accepted_oracle_state(root, sha, "harvest")
+            sibling = root / "work" / "other" / "keep.txt"
+            sibling.parent.mkdir(parents=True)
+            sibling.write_text("stay", encoding="utf-8")
+            discard_workdir(root, "")
+            discard_workdir(root, "absent")
+            with patch("db_pipeline.stages.verify_task", return_value=_accepted_oracle()):
+                verify_stage(state, root)
+            record = read_journal(root, sha)
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("oracle_status"), "accepted")
+            self.assertFalse((root / "work" / sha).exists())
+            self.assertEqual(sibling.read_text(encoding="utf-8"), "stay")
+
+
+def _accepted_oracle() -> OracleResult:
+    return OracleResult("accepted", "accepted", "тесты упали до эталона и прошли после", "", "", "")
+
+
+def _accepted_oracle_state(root: Path, sha: str, detail: str) -> StageResult:
+    instance_id = f"sqlite__sqlite-{sha}"
+    task_path = root / "tasks" / f"{instance_id}.json"
+    write_json(
+        task_path,
+        {
+            "instance_id": instance_id,
+            "repository": "sqlite",
+            "license": "public domain",
+            "base_sha": "base",
+            "statement": "Fix date",
+            "statement_source": "commit_message",
+            "test_patch": "",
+            "gold_patch": "",
+            "fail_to_pass": ["date"],
+            "pass_to_pass": [],
+            "oracle": "testfixture",
+            "reject_reason": "",
+            "head_sha": sha,
+            "pr_number": None,
+            "oracle_command": "",
+        },
+    )
+    create_journal(
+        root,
+        {
+            "sha": sha,
+            "repository_id": "sqlite",
+            "decision": "accept",
+            "reason_code": "accepted",
+            "reason": "есть правка SQL-кода и правка SQL-тестов",
+            "instance_id": instance_id,
+            "pr_number": "",
+            "recorded_at": "2026-10-20T00:00:00+00:00",
+            "oracle_status": "pending",
+            "oracle_reason": "",
+        },
+    )
+    state = _ready(sha)
+    state["status"] = "accepted"
+    state["instance_id"] = instance_id
+    state["task_path"] = str(task_path)
+    state["detail"] = detail
+    return state
 
 
 if __name__ == "__main__":
