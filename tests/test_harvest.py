@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from db_pipeline.config import load_cores, require_core
-from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON, filter_candidate
+from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON, MISSING_SQL_TEST_REASON, filter_candidate
 from db_pipeline.git_ops import select_harvest_rows
 from db_pipeline.journal import create_journal, harvest_known_shas, read_journal, write_json
 from db_pipeline.models import ChangeView, FileChange, change_to_dict
@@ -20,10 +20,10 @@ from db_pipeline.stages import StageResult, discard_workdir, filter_stage, read_
 from db_pipeline.verify_environment import OracleResult
 
 
-def _ready(sha: str) -> StageResult:
+def _ready(sha: str, core_id: str = "sqlite") -> StageResult:
     return {
         "status": "ready",
-        "repository_id": "sqlite",
+        "repository_id": core_id,
         "sha": sha,
         "base_sha": "base",
         "pr_number": "",
@@ -55,7 +55,7 @@ class HarvestTests(unittest.TestCase):
     def test_sql_prefixes_are_fixed(self) -> None:
         cores = {core.id: core for core in load_cores()}
         self.assertEqual(cores["duckdb"].sql_code_prefixes, ["src/", "extension/core_functions/"])
-        self.assertEqual(cores["duckdb"].sql_test_prefixes, ["test/sql/"])
+        self.assertEqual(cores["duckdb"].sql_test_prefixes, cores["duckdb"].test_prefixes)
         self.assertEqual(cores["postgres"].sql_code_prefixes, ["src/backend/"])
         self.assertEqual(cores["postgres"].sql_test_prefixes, ["src/test/regress/"])
         self.assertEqual(cores["sqlite"].sql_code_prefixes, ["src/"])
@@ -134,7 +134,7 @@ class HarvestTests(unittest.TestCase):
         self.assertFalse(filter_candidate(no_test, core, set(), sql_only=True).accept)
         self.assertFalse(filter_candidate(amalgam, core, set(), sql_only=True).accept)
 
-    def test_duckdb_src_passes_and_optimizer_does_not(self) -> None:
+    def test_duckdb_src_passes_with_sql_optimizer_or_api_test(self) -> None:
         core = require_core(load_cores(), "duckdb")
         accepted = _change(
             "duckdb",
@@ -157,9 +157,18 @@ class HarvestTests(unittest.TestCase):
                 FileChange("test/optimizer/aggregate_reuse.test", 3, 0, "modified"),
             ],
         )
+        src_and_api = _change(
+            "duckdb",
+            "Fix API (#4)",
+            [
+                FileChange("src/main/client_context.cpp", 2, 0, "modified"),
+                FileChange("test/api/test_relation_api.cpp", 3, 0, "modified"),
+            ],
+        )
         self.assertTrue(filter_candidate(accepted, core, set(), sql_only=True).accept)
         self.assertFalse(filter_candidate(optimizer_only, core, set(), sql_only=True).accept)
-        self.assertFalse(filter_candidate(src_and_optimizer, core, set(), sql_only=True).accept)
+        self.assertTrue(filter_candidate(src_and_optimizer, core, set(), sql_only=True).accept)
+        self.assertTrue(filter_candidate(src_and_api, core, set(), sql_only=True).accept)
 
     def test_postgres_backend_outside_adt_passes_and_contrib_does_not(self) -> None:
         core = require_core(load_cores(), "postgres")
@@ -215,11 +224,13 @@ class HarvestTests(unittest.TestCase):
             self.assertEqual(total, 20)
             self.assertGreaterEqual(matched, 16)
 
-    def test_missing_sql_code_without_oracle_is_not_known(self) -> None:
+    def test_only_reopenable_harvest_skips_are_not_known(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             skipped = "skip-sql"
-            tested = "no-test"
+            duckdb_no_test = "duckdb-no-test"
+            duckdb_rejected = "duckdb-rejected"
+            sqlite_no_test = "sqlite-no-test"
             accepted = "accepted-sha"
             create_journal(
                 root,
@@ -232,8 +243,27 @@ class HarvestTests(unittest.TestCase):
             create_journal(
                 root,
                 {
-                    "sha": tested,
-                    "reason": "нет правки SQL-тестов",
+                    "sha": duckdb_no_test,
+                    "repository_id": "duckdb",
+                    "reason": MISSING_SQL_TEST_REASON,
+                    "oracle_status": "skipped",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": duckdb_rejected,
+                    "repository_id": "duckdb",
+                    "reason": MISSING_SQL_TEST_REASON,
+                    "oracle_status": "rejected",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": sqlite_no_test,
+                    "repository_id": "sqlite",
+                    "reason": MISSING_SQL_TEST_REASON,
                     "oracle_status": "skipped",
                 },
             )
@@ -247,7 +277,9 @@ class HarvestTests(unittest.TestCase):
             )
             known = harvest_known_shas(root)
             self.assertNotIn(skipped, known)
-            self.assertIn(tested, known)
+            self.assertNotIn(duckdb_no_test, known)
+            self.assertIn(duckdb_rejected, known)
+            self.assertIn(sqlite_no_test, known)
             self.assertIn(accepted, known)
 
     def test_accepted_sha_is_not_filtered_again(self) -> None:
@@ -310,6 +342,47 @@ class HarvestTests(unittest.TestCase):
             state = filter_stage(_ready(sha), root)
             self.assertEqual(state["status"], "accepted")
             self.assertEqual(len(list((root / "journal").glob("*.json"))), 1)
+            record = read_journal(root, sha)
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("decision"), "accept")
+            self.assertEqual(record.get("oracle_status"), "pending")
+
+    def test_duckdb_missing_sql_test_skip_is_reopened(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "reopen-duckdb-test"
+            create_journal(
+                root,
+                {
+                    "sha": sha,
+                    "repository_id": "duckdb",
+                    "decision": "reject",
+                    "reason_code": "missing_code_and_tests",
+                    "reason": MISSING_SQL_TEST_REASON,
+                    "instance_id": "",
+                    "pr_number": "",
+                    "recorded_at": "2026-10-18T00:00:00+00:00",
+                    "oracle_status": "skipped",
+                    "oracle_reason": "",
+                },
+            )
+            write_json(
+                root / "changes" / sha / "change.json",
+                change_to_dict(
+                    _change(
+                        "duckdb",
+                        "Fix optimizer (#4)",
+                        [
+                            FileChange("src/optimizer/optimizer.cpp", 2, 0, "modified"),
+                            FileChange("test/optimizer/aggregate_reuse.test", 3, 0, "modified"),
+                        ],
+                        sha,
+                    )
+                ),
+            )
+            state = filter_stage(_ready(sha, "duckdb"), root)
+            self.assertEqual(state["status"], "accepted")
             record = read_journal(root, sha)
             self.assertIsNotNone(record)
             assert record is not None

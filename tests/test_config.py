@@ -20,7 +20,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(enabled, ["duckdb", "postgres", "sqlite"])
         by_id = {core.id: core for core in cores}
         self.assertEqual(by_id["duckdb"].license, "MIT")
-        self.assertIn("CMAKE_BUILD_PARALLEL_LEVEL=1", by_id["duckdb"].build_command)
+        self.assertIn("CMAKE_BUILD_PARALLEL_LEVEL=3", by_id["duckdb"].build_command)
+        self.assertIn("make -j3", by_id["postgres"].build_command)
         self.assertEqual(by_id["postgres"].oracle, "pg_regress")
         self.assertTrue(by_id["postgres"].enabled)
         self.assertEqual(

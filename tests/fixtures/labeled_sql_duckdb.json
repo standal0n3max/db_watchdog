@@ -1,5 +1,5 @@
 {
-  "description": "Ручная разметка 20 коммитов duckdb: код src/ или extension/core_functions/ и тест test/sql/. Метки поставлены до прогона фильтра и после него не меняются.",
+  "description": "Ручная разметка 20 коммитов duckdb: код src/ или extension/core_functions/ и тест из закреплённых префиксов DuckDB. Метки обновлены до прогона расширенного фильтра.",
   "changes": [
     {
       "sha": "2666f35707b758621f7b4e6e9694be35b41c10b5",
@@ -5392,8 +5392,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "есть core_functions, нет test/sql"
+      "expected": "accept",
+      "human_reason": "есть core_functions и test/issues"
     },
     {
       "sha": "b9694071496e57998cf03268f1ce1859ad87fb6e",
@@ -5620,8 +5620,8 @@
           "deletions": 0
         }
       ],
-      "expected": "reject",
-      "human_reason": "есть core_functions, нет test/sql"
+      "expected": "accept",
+      "human_reason": "есть код ядра и test/api"
     },
     {
       "sha": "14040ad4c9b65fe795f097f1ac4235a4b1cfd5db",
