@@ -4,7 +4,7 @@
 
 ``run_all(data, pr_number, core_id)`` идёт ``watch_repos`` → ``fetch_change`` → ``filter_stage`` → ``compile_stage`` → ``verify_stage`` → ``opencode_stage`` → ``write_record``. Стадия с уже неподходящим ``status`` возвращает состояние как есть. Отказ фильтра или оракула всё равно доходит до ``write_record``.
 
-``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``. После записи журнала ``discard_workdir`` стирает ``data/work/<sha>``.
+``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``. После записи журнала ``discard_workdir`` стирает ``data/work/<sha>``. Пропавший во время удаления файл не выходит наружу: результат оракула уже записан.
 
 Закреплённый ``watch_repos``: DuckDB берёт PR (``pinned_pr`` или аргумент ``pr_number``), PostgreSQL — следующий образец pg-gym, пока отказов оракула меньше ``ORACLE_FAILURE_LIMIT`` (3), SQLite — ``pinned_sha``. Курсор обхода лежит в ``data/cursors/<core>.json``. Закреплённый проход дерево не стирает: следом ``opencode_stage`` делает ``git reset`` в том же каталоге.
 
@@ -175,13 +175,35 @@ def save_oracle_result(
 
 
 @beartype
+def _ignore_missing_file(_function: object, _path: object, exc_info: tuple[object, ...]) -> None:
+    # В Python 3.11 unlink внутри rmtree отдаёт только имя файла, например gc.pid.
+    if len(exc_info) < 2:
+        return
+    error = exc_info[1]
+    if isinstance(error, FileNotFoundError):
+        return
+    if isinstance(error, BaseException):
+        raise error
+
+
+@beartype
 def discard_workdir(root: Path, head_sha: str) -> None:
+    # Результат оракула уже в журнале. Ошибка очистки наружу не выходит.
     if head_sha == "":
         return
     work = root / "work" / head_sha
+    for _attempt in range(2):
+        if not work.is_dir():
+            return
+        try:
+            shutil.rmtree(work, onerror=_ignore_missing_file)
+        except OSError:
+            continue
+        if not work.exists():
+            return
     if not work.is_dir():
         return
-    shutil.rmtree(work)
+    shutil.rmtree(work, ignore_errors=True)
 
 
 @beartype
