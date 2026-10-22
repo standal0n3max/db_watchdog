@@ -44,6 +44,7 @@ from db_pipeline.journal import (
     create_journal,
     harvest_known_shas,
     known_shas,
+    pending_without_oracle,
     read_journal,
     reopen_harvest_record,
     update_journal,
@@ -427,6 +428,15 @@ def compile_stage(state: StageResult, data: Path | None = None) -> StageResult:
         path = root / "tasks" / f"{task.instance_id}.json"
         created = write_json_once(path, task_to_dict(task))
         if not created:
+            # Pending без оракула уже мог получить JSON. Это не второй экземпляр:
+            # оракул ещё не запускался, проверка идёт по записанной задаче.
+            current = read_journal(root, sha)
+            if state["detail"] == "harvest" and current is not None and pending_without_oracle(current):
+                update_journal(root, sha, {"instance_id": task.instance_id})
+                state["instance_id"] = task.instance_id
+                state["task_path"] = str(path)
+                state["statement_source"] = source
+                return state
             state["status"] = "duplicate"
             state["reason_code"] = "already_in_journal"
             state["reason"] = "JSON задачи уже есть"
