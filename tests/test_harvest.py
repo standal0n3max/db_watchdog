@@ -5,6 +5,7 @@ SQL-двадцатки трёх ядер (``labeled_sql_duckdb.json``, ``labeled
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -454,6 +455,34 @@ class HarvestTests(unittest.TestCase):
             assert record is not None
             self.assertEqual(record.get("oracle_status"), "accepted")
             self.assertFalse((root / "work" / sha).exists())
+            self.assertEqual(sibling.read_text(encoding="utf-8"), "stay")
+
+    def test_vanished_file_during_cleanup_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "race-sha"
+            work = root / "work" / sha
+            work.mkdir(parents=True)
+            (work / "gc.pid").write_text("1", encoding="utf-8")
+            (work / "object.o").write_text("draft", encoding="utf-8")
+            sibling = root / "work" / "other" / "keep.txt"
+            sibling.parent.mkdir(parents=True)
+            sibling.write_text("stay", encoding="utf-8")
+            real_unlink = os.unlink
+
+            def unlink(path: str | bytes, dir_fd: int | None = None) -> None:
+                name = os.path.basename(os.fsdecode(path))
+                if name == "gc.pid":
+                    try:
+                        real_unlink(path, dir_fd=dir_fd)
+                    except FileNotFoundError:
+                        pass
+                    raise FileNotFoundError(2, "No such file or directory", "gc.pid")
+                real_unlink(path, dir_fd=dir_fd)
+
+            with patch("os.unlink", side_effect=unlink):
+                discard_workdir(root, sha)
+            self.assertFalse(work.exists())
             self.assertEqual(sibling.read_text(encoding="utf-8"), "stay")
 
     def test_pending_without_oracle_is_not_known_and_passes_filter(self) -> None:
