@@ -4,7 +4,7 @@
 
 ``run_all(data, pr_number, core_id)`` идёт ``watch_repos`` → ``fetch_change`` → ``filter_stage`` → ``compile_stage`` → ``verify_stage`` → ``opencode_stage`` → ``write_record``. Стадия с уже неподходящим ``status`` возвращает состояние как есть. Отказ фильтра или оракула всё равно доходит до ``write_record``.
 
-``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``. После записи журнала ``discard_workdir`` стирает ``data/work/<sha>``.
+``detail == "harvest"`` переключает те же функции. Постановка PostgreSQL и SQLite — сообщение коммита, у DuckDB — issue, описание PR или сообщение коммита. Фильтр идёт по префиксам ``sql_*``, без списков образца. Разрез PostgreSQL — каталог ``src/test/regress/``. OpenCode не вызывается. Параметры окна: ``scan``, ``accept``, ``oracle_budget``. После записи журнала ``discard_workdir`` стирает ``data/work/<sha>``. Пропавший во время удаления файл не выходит наружу: результат оракула уже записан. Сбой одного коммита получает свою запись и сдвигает курсор. ``harvest_failed`` остаётся за подготовкой окна.
 
 Закреплённый ``watch_repos``: DuckDB берёт PR (``pinned_pr`` или аргумент ``pr_number``), PostgreSQL — следующий образец pg-gym, пока отказов оракула меньше ``ORACLE_FAILURE_LIMIT`` (3), SQLite — ``pinned_sha``. Курсор обхода лежит в ``data/cursors/<core>.json``. Закреплённый проход дерево не стирает: следом ``opencode_stage`` делает ``git reset`` в том же каталоге.
 
@@ -44,6 +44,7 @@ from db_pipeline.journal import (
     create_journal,
     harvest_known_shas,
     known_shas,
+    pending_without_oracle,
     read_journal,
     reopen_harvest_record,
     update_journal,
@@ -174,13 +175,35 @@ def save_oracle_result(
 
 
 @beartype
+def _ignore_missing_file(_function: object, _path: object, exc_info: tuple[object, ...]) -> None:
+    # В Python 3.11 unlink внутри rmtree отдаёт только имя файла, например gc.pid.
+    if len(exc_info) < 2:
+        return
+    error = exc_info[1]
+    if isinstance(error, FileNotFoundError):
+        return
+    if isinstance(error, BaseException):
+        raise error
+
+
+@beartype
 def discard_workdir(root: Path, head_sha: str) -> None:
+    # Результат оракула уже в журнале. Ошибка очистки наружу не выходит.
     if head_sha == "":
         return
     work = root / "work" / head_sha
+    for _attempt in range(2):
+        if not work.is_dir():
+            return
+        try:
+            shutil.rmtree(work, onerror=_ignore_missing_file)
+        except OSError:
+            continue
+        if not work.exists():
+            return
     if not work.is_dir():
         return
-    shutil.rmtree(work)
+    shutil.rmtree(work, ignore_errors=True)
 
 
 @beartype
@@ -210,6 +233,7 @@ def run_harvest(
 ) -> StageResult:
     # Закреплённый путь и счётчик трёх отказов сюда не входят.
     # OpenCode не вызывается: экземпляр для датасета готов после оракула.
+    # Подготовка окна ловится отдельно: её сбой по-прежнему harvest_failed.
     root = resolve_data(data)
     ensure_decisions(root)
     summary = _blank()
@@ -224,13 +248,17 @@ def run_harvest(
         ensure_origin_branch(core, clone)
         cursor = read_cursor(root, core.id)
         window = harvest_window(clone, core, harvest_known_shas(root), cursor, scan)
-        if len(window) == 0:
-            _fail(summary, "empty_window", "в окне нет новых коммитов")
-            return write_record(summary, root)
-        accepted = 0
-        builds = 0
-        last = summary
-        for sha, subject in window:
+    except (PipelineError, OSError, ValueError) as exc:
+        _fail(summary, "harvest_failed", str(exc))
+        return write_record(summary, root)
+    if len(window) == 0:
+        _fail(summary, "empty_window", "в окне нет новых коммитов")
+        return write_record(summary, root)
+    accepted = 0
+    builds = 0
+    last = summary
+    for sha, subject in window:
+        try:
             if oracle_budget > 0 and builds >= oracle_budget:
                 last["detail"] = f"потолок сборок {builds}, принято {accepted}"
                 if last["status"] != "verified":
@@ -254,11 +282,11 @@ def run_harvest(
             write_cursor(root, core.id, sha)
             if accepted >= accept:
                 break
-        last["detail"] = f"просмотрено {len(window)}, принято {accepted}, сборок {builds}"
-        return write_record(last, root)
-    except (PipelineError, OSError, ValueError) as exc:
-        _fail(summary, "harvest_failed", str(exc))
-    return write_record(summary, root)
+        except (PipelineError, OSError, ValueError) as exc:
+            last = _record_commit_failure(root, core.id, sha, subject, exc)
+            write_cursor(root, core.id, sha)
+    last["detail"] = f"просмотрено {len(window)}, принято {accepted}, сборок {builds}"
+    return write_record(last, root)
 
 
 @beartype
@@ -427,6 +455,15 @@ def compile_stage(state: StageResult, data: Path | None = None) -> StageResult:
         path = root / "tasks" / f"{task.instance_id}.json"
         created = write_json_once(path, task_to_dict(task))
         if not created:
+            # Pending без оракула уже мог получить JSON. Это не второй экземпляр:
+            # оракул ещё не запускался, проверка идёт по записанной задаче.
+            current = read_journal(root, sha)
+            if state["detail"] == "harvest" and current is not None and pending_without_oracle(current):
+                update_journal(root, sha, {"instance_id": task.instance_id})
+                state["instance_id"] = task.instance_id
+                state["task_path"] = str(path)
+                state["statement_source"] = source
+                return state
             state["status"] = "duplicate"
             state["reason_code"] = "already_in_journal"
             state["reason"] = "JSON задачи уже есть"
@@ -794,6 +831,48 @@ def _ready_harvest(core_id: str, sha: str, subject: str) -> StageResult:
         if number is not None:
             state["pr_number"] = str(number)
     return state
+
+
+@beartype
+def _record_commit_failure(
+    root: Path,
+    core_id: str,
+    sha: str,
+    subject: str,
+    exc: PipelineError | OSError | ValueError,
+) -> StageResult:
+    # Код harvest_failed сюда не ставится: из-за него очередь в _sequence_stopped кончается.
+    state = _ready_harvest(core_id, sha, subject)
+    if isinstance(exc, PipelineError) and exc.reason_code != "harvest_failed":
+        _fail(state, exc.reason_code, exc.reason)
+    elif isinstance(exc, PipelineError):
+        _fail(state, "commit_failed", exc.reason)
+    else:
+        _fail(state, "commit_failed", str(exc))
+    existing = read_journal(root, sha)
+    fields: dict[str, object] = {
+        "decision": "reject",
+        "reason_code": state["reason_code"],
+        "reason": state["reason"],
+        "oracle_status": "skipped",
+        "oracle_reason": state["reason"],
+    }
+    if existing is None:
+        create_journal(
+            root,
+            {
+                "sha": sha,
+                "repository_id": state["repository_id"],
+                "instance_id": "",
+                "pr_number": state["pr_number"],
+                "sample": "",
+                "recorded_at": _now(),
+                **fields,
+            },
+        )
+    elif pending_without_oracle(existing):
+        update_journal(root, sha, fields)
+    return write_record(state, root)
 
 
 @beartype

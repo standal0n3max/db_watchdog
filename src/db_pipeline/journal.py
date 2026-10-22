@@ -2,7 +2,7 @@
 
 ``create_journal`` создаёт файл через ``O_EXCL`` и возвращает ложь, если запись уже есть. ``write_json_once`` так же не перезаписывает JSON задачи или прогона. ``update_journal`` дописывает поля в существующую запись.
 
-``known_shas`` — все файлы журнала. ``harvest_known_shas`` из этого множества выпускает записи, которые надо разобрать повторно: ``нет правки SQL-кода`` без запуска оракула для любого ядра и ``нет правки SQL-тестов`` без запуска оракула для DuckDB. ``accepted_count(data, repository_id)`` считает записи с ``oracle_status=accepted``.
+``known_shas`` — все файлы журнала. ``harvest_known_shas`` из этого множества выпускает записи, которые надо разобрать повторно: ``нет правки SQL-кода`` без запуска оракула для любого ядра, ``нет правки SQL-тестов`` без запуска оракула для DuckDB и ``oracle_status=pending`` без результата оракула для любого ядра. ``accepted_count(data, repository_id)`` считает записи с ``oracle_status=accepted``.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ def accepted_count(data: Path, repository_id: str) -> int:
 
 @beartype
 def harvest_known_shas(data: Path) -> set[str]:
-    # Пропуск «нет правки SQL-кода» без оракула можно разобрать снова.
-    # Принятые, отказы оракула, merge, документация и «нет теста» остаются известными.
+    # Снова разбираются пропуски без оракула и незавершённый pending.
+    # Принятые и отклонённые оракулом записи остаются известными.
     folder = data / "journal"
     if not folder.exists():
         return set()
@@ -73,7 +73,24 @@ def reopen_missing_sql_code(record: dict[str, object]) -> bool:
 
 
 @beartype
+def pending_without_oracle(record: dict[str, object]) -> bool:
+    # Фильтр ставит pending до оракула. Непустая причина или лог — результат уже записан.
+    if record.get("oracle_status") != "pending":
+        return False
+    reason = record.get("oracle_reason")
+    if isinstance(reason, str) and reason != "":
+        return False
+    for key in ("before_log", "after_log", "build_log"):
+        value = record.get(key)
+        if isinstance(value, str) and value != "":
+            return False
+    return True
+
+
+@beartype
 def reopen_harvest_record(record: dict[str, object]) -> bool:
+    if pending_without_oracle(record):
+        return True
     if reopen_missing_sql_code(record):
         return True
     if record.get("repository_id") != "duckdb":
