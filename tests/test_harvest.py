@@ -23,6 +23,7 @@ from db_pipeline.stages import (
     discard_workdir,
     filter_stage,
     read_cursor,
+    run_harvest,
     verify_stage,
     write_cursor,
 )
@@ -624,6 +625,52 @@ class HarvestTests(unittest.TestCase):
             self.assertEqual(result["status"], "accepted")
             self.assertEqual(result["task_path"], str(task_path))
             self.assertEqual(len(list((root / "tasks").glob("*.json"))), 1)
+
+    def test_one_commit_failure_is_not_harvest_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seen: list[str] = []
+
+            def fetch(state: StageResult, data: Path | None = None) -> StageResult:
+                del data
+                seen.append(state["sha"])
+                if state["sha"] == "bad":
+                    raise OSError(2, "No such file or directory", "gc.pid")
+                state["status"] = "rejected"
+                state["reason_code"] = "fetch_failed"
+                state["reason"] = "остановка теста"
+                return state
+
+            window = [("bad", "Fix bad (#1)"), ("good", "Fix good (#2)")]
+            with (
+                patch("db_pipeline.stages.ensure_origin_branch"),
+                patch("db_pipeline.stages.harvest_window", return_value=window),
+                patch("db_pipeline.stages.fetch_change", side_effect=fetch),
+            ):
+                result = run_harvest(root, core_id="sqlite", scan=5, accept=2)
+            self.assertNotEqual(result["reason_code"], "harvest_failed")
+            self.assertEqual(seen, ["bad", "good"])
+            self.assertEqual(read_cursor(root, "sqlite"), "good")
+            record = read_journal(root, "bad")
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("reason_code"), "commit_failed")
+            self.assertNotEqual(record.get("reason_code"), "harvest_failed")
+
+    def test_window_preparation_failure_stays_harvest_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                patch("db_pipeline.stages.ensure_origin_branch"),
+                patch(
+                    "db_pipeline.stages.harvest_window",
+                    side_effect=OSError(2, "No such file or directory", "gc.pid"),
+                ),
+            ):
+                result = run_harvest(root, core_id="sqlite", scan=5, accept=1)
+            self.assertEqual(result["reason_code"], "harvest_failed")
+            self.assertEqual(result["sha"], "")
+            self.assertEqual(read_cursor(root, "sqlite"), "")
 
 
 def _accepted_oracle() -> OracleResult:
