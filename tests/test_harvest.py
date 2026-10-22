@@ -14,9 +14,17 @@ from db_pipeline.config import load_cores, require_core
 from db_pipeline.filter_rules import MISSING_SQL_CODE_REASON, MISSING_SQL_TEST_REASON, filter_candidate
 from db_pipeline.git_ops import select_harvest_rows
 from db_pipeline.journal import create_journal, harvest_known_shas, read_journal, write_json
-from db_pipeline.models import ChangeView, FileChange, change_to_dict
+from db_pipeline.models import ChangeView, FileChange, TaskInstance, change_to_dict
 from db_pipeline.sql_report import write_sql_labeled_report
-from db_pipeline.stages import StageResult, discard_workdir, filter_stage, read_cursor, verify_stage, write_cursor
+from db_pipeline.stages import (
+    StageResult,
+    compile_stage,
+    discard_workdir,
+    filter_stage,
+    read_cursor,
+    verify_stage,
+    write_cursor,
+)
 from db_pipeline.verify_environment import OracleResult
 
 
@@ -447,6 +455,146 @@ class HarvestTests(unittest.TestCase):
             self.assertEqual(record.get("oracle_status"), "accepted")
             self.assertFalse((root / "work" / sha).exists())
             self.assertEqual(sibling.read_text(encoding="utf-8"), "stay")
+
+    def test_pending_without_oracle_is_not_known_and_passes_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pending = "pending-sha"
+            postgres_pending = "postgres-pending"
+            with_log = "pending-with-log"
+            accepted = "accepted-sha"
+            rejected = "rejected-sha"
+            create_journal(
+                root,
+                {
+                    "sha": pending,
+                    "repository_id": "sqlite",
+                    "reason": "есть правка SQL-кода и правка SQL-тестов",
+                    "oracle_status": "pending",
+                    "oracle_reason": "",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": postgres_pending,
+                    "repository_id": "postgres",
+                    "oracle_status": "pending",
+                    "oracle_reason": "",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": with_log,
+                    "repository_id": "duckdb",
+                    "oracle_status": "pending",
+                    "oracle_reason": "",
+                    "before_log": "/tmp/before.log",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": accepted,
+                    "repository_id": "sqlite",
+                    "oracle_status": "accepted",
+                    "oracle_reason": "тесты упали до эталона и прошли после",
+                },
+            )
+            create_journal(
+                root,
+                {
+                    "sha": rejected,
+                    "repository_id": "duckdb",
+                    "oracle_status": "rejected",
+                    "oracle_reason": "тесты из test_patch прошли до эталона",
+                },
+            )
+            known = harvest_known_shas(root)
+            self.assertNotIn(pending, known)
+            self.assertNotIn(postgres_pending, known)
+            self.assertIn(with_log, known)
+            self.assertIn(accepted, known)
+            self.assertIn(rejected, known)
+            write_json(
+                root / "changes" / pending / "change.json",
+                change_to_dict(
+                    _change(
+                        "sqlite",
+                        "Fix union",
+                        [
+                            FileChange("src/select.c", 2, 0, "modified"),
+                            FileChange("test/unionall2.test", 2, 0, "modified"),
+                        ],
+                        pending,
+                    )
+                ),
+            )
+            state = filter_stage(_ready(pending), root)
+            self.assertEqual(state["status"], "accepted")
+            record = read_journal(root, pending)
+            self.assertIsNotNone(record)
+            assert record is not None
+            self.assertEqual(record.get("oracle_status"), "pending")
+            self.assertEqual(record.get("decision"), "accept")
+
+    def test_pending_task_json_stays_open_for_oracle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sha = "pending-task"
+            instance_id = "sqlite__sqlite-pending-tas"
+            task_path = root / "tasks" / f"{instance_id}.json"
+            write_json(task_path, {"instance_id": instance_id, "head_sha": sha})
+            create_journal(
+                root,
+                {
+                    "sha": sha,
+                    "repository_id": "sqlite",
+                    "instance_id": instance_id,
+                    "oracle_status": "pending",
+                    "oracle_reason": "",
+                },
+            )
+            folder = root / "changes" / sha
+            folder.mkdir(parents=True)
+            write_json(
+                folder / "change.json",
+                change_to_dict(
+                    _change(
+                        "sqlite",
+                        "Fix date",
+                        [FileChange("src/date.c", 1, 0, "modified")],
+                        sha,
+                    )
+                ),
+            )
+            (folder / "statement.txt").write_text("Fix date", encoding="utf-8")
+            (folder / "statement_source.txt").write_text("commit_message", encoding="utf-8")
+            (folder / "diff.patch").write_text("", encoding="utf-8")
+            state = _ready(sha)
+            state["status"] = "accepted"
+            task = TaskInstance(
+                instance_id=instance_id,
+                repository="sqlite/sqlite",
+                license="public domain",
+                base_sha="base",
+                statement="Fix date",
+                statement_source="commit_message",
+                test_patch="",
+                gold_patch="",
+                fail_to_pass=["date"],
+                pass_to_pass=[],
+                oracle="testfixture",
+                reject_reason="",
+                head_sha=sha,
+                pr_number=None,
+            )
+            with patch("db_pipeline.stages.compile_task", return_value=task):
+                result = compile_stage(state, root)
+            self.assertEqual(result["status"], "accepted")
+            self.assertEqual(result["task_path"], str(task_path))
+            self.assertEqual(len(list((root / "tasks").glob("*.json"))), 1)
 
 
 def _accepted_oracle() -> OracleResult:
