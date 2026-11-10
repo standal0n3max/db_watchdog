@@ -90,4 +90,3 @@ def archive_tree(target: Path) -> bytes:
                 continue
             tar.add(item, arcname=item.name)
     return buffer.getvalue()
-
