@@ -41,6 +41,38 @@ tokens, а trace доступен по сохранённому URL.
 - health `/api/public/health` и валидность ключей `/api/public/projects`;
 - probe trace (`--no-probe` отключает).
 
-Секреты и auth-заголовки в payload не попадают. Сам стек Langfuse в этот
-репозиторий не входит: он поднимается отдельно, а `db_pipeline` только
-публикует трассы по OTLP.
+Секреты и auth-заголовки в payload не попадают.
+
+## Локальный стек
+
+Стек Langfuse v4 входит в репозиторий: `docker/langfuse/docker-compose.yml`
+поднимает web, worker, clickhouse, minio, redis и postgres в своей compose-сети
+(`db-pipeline-langfuse`). Внешних сетей нет, наружу открыт только web на
+`127.0.0.1:3100`. Справка — [docker/langfuse/README.md](../docker/langfuse/README.md).
+
+Цели Makefile:
+
+```bash
+cp docker/langfuse/.env.example docker/langfuse/.env
+make langfuse-up        # up -d --wait
+make langfuse-down      # остановить, данные сохранить
+make langfuse-health    # GET /api/public/health
+make langfuse-logs      # хвост логов web и worker
+make langfuse-reset     # ОПАСНО: down -v
+```
+
+Порты: `3100` (web/OTLP), `3030` (worker), `18123`/`19000` (clickhouse),
+`9090`/`19091` (minio), `6379` (redis), `15432` (postgres).
+
+Ключи проекта создаются при первом старте из `LANGFUSE_INIT_PROJECT_PUBLIC_KEY`
+и `LANGFUSE_INIT_PROJECT_SECRET_KEY` файла `docker/langfuse/.env`. Те же значения
+нужны в корневом `.env` как `LANGFUSE_PUBLIC_KEY` и `LANGFUSE_SECRET_KEY`.
+
+Два env-файла: `docker/langfuse/.env` держит секреты стека (postgres, clickhouse,
+redis, minio, nextauth, ключи проекта), корневой `.env` — окружение benchmark.
+Секреты стека в окружение прогона не попадают.
+
+`SALT` и `ENCRYPTION_KEY` после первого старта менять нельзя: сохранённые ключи
+перестанут расшифровываться. Два стека одновременно не поднимать, порты
+пересекаются. `doctor` проверяет health, валидность ключей на `/api/public/projects`
+и публикует probe trace, поэтому работает и без поднятого pg-gym.

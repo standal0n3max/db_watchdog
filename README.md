@@ -139,6 +139,8 @@ docker/task-entrypoint.sh      entrypoint task-контейнера: распа�
 docker/graph.Dockerfile        образ MCP-сервера графа
 docker/model-gateway/          gateway к OpenRouter с allowlist модели
 docker/compose.benchmark.yml   ручной диагностический сценарий gateway и графа
+docker/langfuse/               локальный стек Langfuse v4: compose, пример окружения, справка
+Makefile                       цели управления стеком Langfuse
 dags/duckdb_pipeline.py        DAG DuckDB
 dags/postgres_pipeline.py      DAG PostgreSQL
 dags/sqlite_pipeline.py        DAG SQLite
@@ -317,4 +319,15 @@ cp .env.example .env
 
 Код `postgres_gym` не импортируется и не устанавливается. Для benchmark-прогона эти пути не нужны: задачи и oracle уже сконвертированы в `data/benchmark/postgres`. Индекс графа собирается из локального клона `data/clones/postgres`.
 
-Стек Langfuse не входит в этот репозиторий: `db_pipeline` только публикует трассы по OTLP на `LANGFUSE_URL` (по умолчанию `http://localhost:3100`). Сам Langfuse поднимается отдельно, сейчас — compose-файлом соседнего репозитория (`db_agent_gym/pg-gym/local/langfuse/docker-compose.yml`). Это внешняя runtime-зависимость окружения, а не кода; при желании Langfuse переезжает внутрь `docker/` без правок в Python.
+## Стек Langfuse
+
+Langfuse v4 входит в репозиторий: `docker/langfuse/docker-compose.yml` поднимает web, worker, clickhouse, minio, redis и postgres в своей compose-сети. Внешних сетей нет, наружу открыт только web на `127.0.0.1:3100`. `db_pipeline` публикует трассы по OTLP на `LANGFUSE_URL` (по умолчанию `http://localhost:3100`).
+
+```bash
+cp docker/langfuse/.env.example docker/langfuse/.env
+# заполнить секреты стека и LANGFUSE_INIT_*
+make langfuse-up
+make langfuse-health
+```
+
+Ключи проекта из `docker/langfuse/.env` (`LANGFUSE_INIT_PROJECT_PUBLIC_KEY`/`LANGFUSE_INIT_PROJECT_SECRET_KEY`) должны совпадать с `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` корневого `.env`. Справка и таблица портов — [docker/langfuse/README.md](docker/langfuse/README.md), детали трассировки — [docs/langfuse.md](docs/langfuse.md).
