@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && localedef -i en_US -f UTF-8 en_US.UTF-8 \
     && localedef -i sv_SE -f UTF-8 sv_SE.UTF-8 \
     && localedef -i tr_TR -f UTF-8 tr_TR.UTF-8 \
+    && localedef -i de_DE -f UTF-8 de_DE \
+    && localedef -i en_US -f UTF-8 en_US \
+    && localedef -i sv_SE -f UTF-8 sv_SE \
+    && localedef -i tr_TR -f UTF-8 tr_TR \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1000 bench
@@ -37,12 +41,11 @@ RUN set -eu; \
     rm -rf /tmp/opencode /tmp/opencode.tar.gz; \
     opencode --version
 
-# Конфиг OpenCode лежит в образе и не поступает с хоста.
-COPY docker/opencode.jsonc /etc/bench/opencode.jsonc
+# Эффективный конфиг OpenCode генерируется на каждый run и передаётся
+# через docker exec/write, а не берётся из образа. Каталог конфига готовим.
 COPY docker/task-entrypoint.sh /usr/local/bin/bench-entry
 RUN chmod +x /usr/local/bin/bench-entry \
     && mkdir -p /workspace/postgres /work /home/bench/.config/opencode \
-    && cp /etc/bench/opencode.jsonc /home/bench/.config/opencode/opencode.jsonc \
     && chown -R bench:bench /workspace /work /home/bench
 
 ENV OPENCODE_CONFIG=/home/bench/.config/opencode/opencode.jsonc \

@@ -14,7 +14,6 @@ if [ -s /work/tree.tar.gz ]; then
 fi
 
 mkdir -p /workspace/postgres /work /home/bench/.config/opencode
-cp /etc/bench/opencode.jsonc /home/bench/.config/opencode/opencode.jsonc
 touch /work/ready
 
 exec "$@"
