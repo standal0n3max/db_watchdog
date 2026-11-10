@@ -1,6 +1,6 @@
 # db_pipeline
 
-Локальный сборщик задач по ядру СУБД. Это компонент автопополнения: он готовит экземпляры, которые позже кладутся в тот же pg-gym. Отдельный бенчмарк здесь не заводится.
+Локальный сборщик задач по ядру СУБД. Это компонент автопополнения: он готовит экземпляры, которые позже кладутся в тот же pg-gym. Отдельный бенчмарк здесь не заводится: benchmark-прогон (изолированный runner) живёт в этом же пакете, но под другой точкой входа — `python -m db_pipeline.benchmark`, и не ломает harvesting CLI.
 
 Включены три ядра: DuckDB, PostgreSQL и SQLite. У каждого свой DAG и свой образ инструментов.
 
@@ -225,6 +225,26 @@ docker build -t db-pipeline-duckdb-tools:local -f docker/duckdb.Dockerfile docke
 
 Пустой diff — ошибка модели: в поле `pass` пишется ложь. Один такой прогон уже записан для `duckdb__duckdb-26419`: модель отработала около 22 минут, код выхода 0, рабочего diff после прогона не осталось, поэтому pass ложь. Установленный CLI не принимает `--auto`; процесс запускается с `--dangerously-skip-permissions`. Пять повторов, как в оригинальном SWE-rebench, в этот проход не входят.
 
+## Benchmark-прогон PostgreSQL
+
+Отдельная точка входа `python -m db_pipeline.benchmark` переносит поведение commit-suite из pg-gym: одноразовый контейнер без bind mounts, скрытые тесты, оборванная история, gates, verdict и трасса Langfuse v4. Сборщик harvesting (`python -m db_pipeline`) при этом не меняется.
+
+Команды:
+
+```bash
+uv run python -m db_pipeline.benchmark convert          # watchdog → commit-suite
+uv run python -m db_pipeline.benchmark validate         # проверить публичную часть и источник
+uv run python -m db_pipeline.benchmark doctor           # Docker и Langfuse
+uv run python -m db_pipeline.benchmark build            # собрать образы задачи и графа
+uv run python -m db_pipeline.benchmark run <sha> --mode bare
+uv run python -m db_pipeline.benchmark smoke            # парный smoke bare/graph
+uv run python -m db_pipeline.benchmark graph-index      # индекс графа с отсечкой
+```
+
+Конвертер раскладывает карточки `data/tasks/postgres__*.json` в публичную задачу (`area`, `goal`, `contract`, `graded_by`) и приватный oracle (`head`/`base`, reverse source patch, тестовый патч, эталон). Публичная часть не содержит эталона и содержимого тестов.
+
+Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md).
+
 ## Чего в этом компоненте нет
 
-Импорт JSON в pg-gym, повтор 104 задач, Langfuse, граф, пять повторов и языковой отбор.
+Импорт JSON в pg-gym, повтор 104 задач, пять повторов и языковой отбор. Хостовый путь `opencode_run.py` больше не участвует в benchmark-прогоне.
