@@ -1,6 +1,12 @@
 # db_pipeline
 
-Локальный сборщик задач по ядру СУБД. Это компонент автопополнения: он готовит экземпляры, которые позже кладутся в тот же pg-gym. Отдельный бенчмарк здесь не заводится: benchmark-прогон (изолированный runner) живёт в этом же пакете, но под другой точкой входа — `python -m db_pipeline.benchmark`, и не ломает harvesting CLI.
+Пакет решает две задачи, и у каждой своя точка входа.
+
+**Harvesting — `python -m db_pipeline`.** Сборщик задач по ядру СУБД: он готовит экземпляры, которые позже кладутся в pg-gym. Стадии Airflow, журнал, фильтр, оракул и обход истории описаны ниже.
+
+**Benchmark — `python -m db_pipeline.benchmark`.** Изолированный прогон агента на одной PostgreSQL-задаче и парный smoke `bare`/`graph`. Поведение перенесено из commit-suite pg-gym, но реализовано своим кодом: одноразовый контейнер без bind mounts, скрытые тесты, оборванная история, gates, verdict, модель через свой model-gateway, трасса Langfuse v4 и свой граф кода по MCP. Harvesting CLI при этом не меняется — прогоны и сборка живут в одном пакете, но не мешают друг другу.
+
+Текущее состояние — локальный checkpoint на ветке `feat/postgres-isolated-runner`. Парный smoke пяти задач ещё не завершён; фактический отчёт по последнему прогону лежит в [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
 
 Включены три ядра: DuckDB, PostgreSQL и SQLite. У каждого свой DAG и свой образ инструментов.
 
@@ -10,7 +16,9 @@
 
 Сборщик и стенд оценки агентов остаются разными компонентами. Образ, в котором сборщик проверяет коммит, и образ, в котором стенд прогоняет агента, живут отдельно. У pg-gym свой образ PostgreSQL уже есть, и прогон агента на стенде идёт в нём.
 
-План DuckDB: [plans/2026-10-10_mvp_пайплайн_duckdb.md](../plans/2026-10-10_mvp_пайплайн_duckdb.md). План PostgreSQL и SQLite: [plans/2026-10-10_postgres_sqlite_пайплайн.md](../plans/2026-10-10_postgres_sqlite_пайплайн.md). Сбор новых SQL-коммитов: [plans/2026-10-18_сбор_новых_sql_коммитов.md](../plans/2026-10-18_сбор_новых_sql_коммитов.md). Сбор коммитов ядра: [plans/2026-10-19_сбор_коммитов_ядра.md](../plans/2026-10-19_сбор_коммитов_ядра.md).
+У benchmark-прогона свои образы: `docker/task.Dockerfile` (toolchain PostgreSQL + OpenCode 1.18.20), `docker/graph.Dockerfile` (MCP-сервер графа) и `docker/model-gateway/Dockerfile` (единственная точка с ключом OpenRouter). Ключ модели в task-образ не попадает.
+
+План DuckDB: [plans/2026-10-10_mvp_пайплайн_duckdb.md](../plans/2026-10-10_mvp_пайплайн_duckdb.md). План PostgreSQL и SQLite: [plans/2026-10-10_postgres_sqlite_пайплайн.md](../plans/2026-10-10_postgres_sqlite_пайплайн.md). Сбор новых SQL-коммитов: [plans/2026-10-18_сбор_новых_sql_коммитов.md](../plans/2026-10-18_сбор_новых_sql_коммитов.md). Сбор коммитов ядра: [plans/2026-10-19_сбор_коммитов_ядра.md](../plans/2026-10-19_сбор_коммитов_ядра.md). Парный smoke пяти задач: [plans/2026-11-10_парный_smoke_пяти_задач.md](../plans/2026-11-10_парный_smoke_пяти_задач.md).
 
 ## Что делает цепочка
 
@@ -121,19 +129,29 @@ build/release/test/unittest {test}
 ## Каталог
 
 ```text
-repos.toml                 три ядра, лицензии, префиксы, команды
-docker/duckdb.Dockerfile   инструменты сборки DuckDB, без исходников и без секрета
-docker/postgres.Dockerfile инструменты сборки PostgreSQL
-docker/sqlite.Dockerfile   инструменты сборки SQLite и testfixture
-dags/duckdb_pipeline.py    DAG DuckDB
-dags/postgres_pipeline.py  DAG PostgreSQL
-dags/sqlite_pipeline.py    DAG SQLite
+repos.toml                     три ядра, лицензии, префиксы, команды
+.env.example                   пример окружения без секретов; реальный .env игнорируется
+docker/duckdb.Dockerfile       инструменты сборки DuckDB, без исходников и без секрета
+docker/postgres.Dockerfile     инструменты сборки PostgreSQL
+docker/sqlite.Dockerfile       инструменты сборки SQLite и testfixture
+docker/task.Dockerfile         образ benchmark-задачи: toolchain PostgreSQL и OpenCode
+docker/task-entrypoint.sh      entrypoint task-контейнера: распаковка дерева, маркер готовности
+docker/graph.Dockerfile        образ MCP-сервера графа
+docker/model-gateway/          gateway к OpenRouter с allowlist модели
+docker/compose.benchmark.yml   ручной диагностический сценарий gateway и графа
+dags/duckdb_pipeline.py        DAG DuckDB
+dags/postgres_pipeline.py      DAG PostgreSQL
+dags/sqlite_pipeline.py        DAG SQLite
 prompts/opencode_system.txt
-prompts/opencode.json      температура 0 и 50 шагов, ключ не хранится
-src/db_pipeline/           стадии и модель экземпляра
-tests/                     фильтр на 20 изменениях, SQL-двадцатки, разрез патча, журнал
-constraints/               constraints Airflow 2.11 для Python 3.11
-data/                      в gitignore: клон, журнал, JSON, логи, AIRFLOW_HOME
+prompts/opencode.json          температура 0 и 50 шагов, ключ не хранится
+src/db_pipeline/               стадии harvesting и модель экземпляра
+src/db_pipeline/environment.py загрузка корневого .env на границе CLI
+src/db_pipeline/benchmark/     benchmark: конвертер, runner, session, probe, opencode, telemetry
+src/db_pipeline/benchmark/graph/ индекс, store, cutoff, MCP-сервер и probe-клиент
+docs/                          протокол, изоляция, Langfuse, граф, smoke, происхождение, отчёт факта
+tests/                         фильтр, разрез патча, журнал, конвертер, граф, изоляция, окружение
+constraints/                   constraints Airflow 2.11 для Python 3.11
+data/                          в gitignore: клон, журнал, JSON, логи, индекс, AIRFLOW_HOME
 ```
 
 `data/` не коммитится. Туда попадают:
@@ -144,6 +162,9 @@ data/                      в gitignore: клон, журнал, JSON, логи,
 - `data/tasks/<instance_id>.json` — экземпляр;
 - `data/runs/<instance_id>.json` — прогон;
 - `data/oracle/<sha>/` — логи сборки, «до» и «после»;
+- `data/benchmark/postgres/{tasks,oracle,prep}` — публичные задачи, приватные oracle и prep-патчи benchmark-прогона;
+- `data/graph/postgres.sqlite` — SQLite-индекс графа (union пяти баз);
+- `data/reports/smoke-postgres.json` — сводный отчёт парного smoke;
 - `data/filter_sample.jsonl` — журнал фильтра на 20 изменениях;
 - `data/decisions.md` — фактические команды и ошибки среды;
 - `data/airflow/` — свой отдельный Airflow.
@@ -162,10 +183,12 @@ UV_CONSTRAINT=constraints/airflow-2.11.0-3.11.txt uv sync
 Проверки пакета:
 
 ```bash
-uv run python -m unittest discover -s tests
+uv run python -m pytest tests -q
 uv run mypy
 uv run pyright
 ```
+
+Тесты совместимы и с `unittest`: `uv run python -m unittest discover -s tests`.
 
 Фильтр на размеченной выборке заново пишет `data/filter_sample.jsonl`. Метки в `tests/fixtures/labeled_changes.json` после просмотра решения фильтра не меняются. Если совпадение падает ниже 16 из 20, правятся префиксы в `repos.toml`, а не разметка. Расхождения пишутся в `data/filter_notes.md`. Сейчас совпадение 20 из 20. То же правило для двадцаток ядра `tests/fixtures/labeled_sql_duckdb.json`, `labeled_sql_postgres.json` и `labeled_sql_sqlite.json`: на каждом ядре 20 из 20, заметки `data/<ядро>_sql_filter_notes.md`. Эти двадцатки фиксируют правило «код ядра и прежний тест». Узкий срез трёх файлов SQLite, `adt/` и только `core_functions/` больше не является критерием.
 
@@ -221,6 +244,8 @@ docker build -t db-pipeline-duckdb-tools:local -f docker/duckdb.Dockerfile docke
 
 ## OpenCode
 
+Раздел описывает harvesting-прогон (`python -m db_pipeline`); поведение benchmark-прогона отличается (см. ниже).
+
 Модель `deepseek/deepseek-v4-flash`, обвязка `opencode`, температура 0. Ключ читается из переменной `OPENROUTER_API_KEY` в момент прогона. В Dockerfile, в git и в `data/` он не записывается. OpenCode стоит на хосте и правит смонтированное дерево. После прогона тестовые файлы возвращаются к патчу задачи, чтобы агент не мог закрыть тест правкой самого теста. Затем оракул пересобирает дерево и гоняет `fail_to_pass`.
 
 Пустой diff — ошибка модели: в поле `pass` пишется ложь. Один такой прогон уже записан для `duckdb__duckdb-26419`: модель отработала около 22 минут, код выхода 0, рабочего diff после прогона не осталось, поэтому pass ложь. Установленный CLI не принимает `--auto`; процесс запускается с `--dangerously-skip-permissions`. Пять повторов, как в оригинальном SWE-rebench, в этот проход не входят.
@@ -229,22 +254,67 @@ docker build -t db-pipeline-duckdb-tools:local -f docker/duckdb.Dockerfile docke
 
 Отдельная точка входа `python -m db_pipeline.benchmark` переносит поведение commit-suite из pg-gym: одноразовый контейнер без bind mounts, скрытые тесты, оборванная история, gates, verdict и трасса Langfuse v4. Сборщик harvesting (`python -m db_pipeline`) при этом не меняется.
 
-Команды:
+### Команды
 
 ```bash
 uv run python -m db_pipeline.benchmark convert          # watchdog → commit-suite
 uv run python -m db_pipeline.benchmark validate         # проверить публичную часть и источник
 uv run python -m db_pipeline.benchmark doctor           # Docker и Langfuse
-uv run python -m db_pipeline.benchmark build            # собрать образы задачи и графа
+uv run python -m db_pipeline.benchmark build            # собрать образы задачи, графа и gateway
 uv run python -m db_pipeline.benchmark run <sha> --mode bare
-uv run python -m db_pipeline.benchmark smoke            # парный smoke bare/graph
+uv run python -m db_pipeline.benchmark run <sha> --mode graph
+uv run python -m db_pipeline.benchmark probe            # дешёвый E2E probe gateway и MCP
+uv run python -m db_pipeline.benchmark smoke            # парный smoke bare/graph на пяти задачах
 uv run python -m db_pipeline.benchmark graph-index      # индекс графа с отсечкой
+uv run python -m db_pipeline.benchmark graph-index --union --per-base 50
 ```
 
 Конвертер раскладывает карточки `data/tasks/postgres__*.json` в публичную задачу (`area`, `goal`, `contract`, `graded_by`) и приватный oracle (`head`/`base`, reverse source patch, тестовый патч, эталон). Публичная часть не содержит эталона и содержимого тестов.
 
-Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md).
+### Оркестрация
+
+Smoke ведёт себя сам, без compose: на сессию поднимается одна внутренняя сеть и один model-gateway, на каждый graph-run — отдельный одноразовый graph-container с копией union-индекса. Порядок условий чередуется (B/G, G/B, B/G, G/B, B/G), сессии не переиспользуются. Ноль MCP-вызовов в graph-run считается ошибкой интеграции, а не результатом.
+
+`docker/compose.benchmark.yml` оставлен как ручной диагностический сценарий: он поднимает gateway и граф с постоянной внешней SQLite, а `BENCH_GRAPH_BASE_SHA` задаётся вручную.
+
+### OpenCode и Model-gateway
+
+Эффективный конфиг OpenCode генерируется на каждый run и передаётся в контейнер, а не берётся из образа: `bare`-конфиг MCP не содержит, `graph`-конфиг подключает сервер графа как remote Streamable HTTP (`http://graph:8765/mcp`). Hash конфига пишется в manifest. Task-container не видит `OPENROUTER_API_KEY` — ключ живёт только в model-gateway, который проверяет allowlist модели и разрешает лишь OpenAI-compatible endpoints.
+
+### Граф кода
+
+Свой MCP-сервер с тремя инструментами: `find_code_symbols` (символы C-кода по имени до cutoff), `read_versioned_source` (реальный фрагмент файла на закреплённой ревизии с SHA-256 и byte span), `search_git_history` (сообщения коммитов, hunks и тела кода). Любая возвращаемая revision обязана быть предком `base_sha`; `head_sha` и его потомки не выдаются, нулевой результат пишется в audit log.
+
+Union-индекс строится по последним 50 предкам каждого из пяти `base_sha`, дельта коммитов дополняется снимком полного source-дерева каждой базы (иначе неизменившийся файл вроде `relnode.c` агенту недоступен). Индекс передаётся в graph-container копией SQLite, полный git-клон в контейнер не монтируется.
+
+### Отчёт
+
+Run records immutable: каждый прогон пишется отдельным файлом в `data/runs/` с session/run ID и не перезаписывает предыдущие. Сводный отчёт `data/reports/smoke-postgres.json` содержит pass@1, gates, test outcomes, latency, tokens, tool counts, MCP calls, effective base/head, ссылки Langfuse и отчёт cleanup. На пяти задачах выводится только работоспособность E2E, не статистическая значимость эффекта графа.
+
+Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md), [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
+
+### Секреты и `.env`
+
+Корневой `.env` загружается только на границе CLI (`load_environment`, `override=False`): уже экспортированные переменные имеют приоритет, отсутствующий файл не является ошибкой, значения не логируются. Реальный `.env` игнорируется git; пример без секретов — [.env.example](.env.example). Ключ OpenRouter нужен только model-gateway, ключи Langfuse — только хосту-оркестратору.
+
+```bash
+cp .env.example .env
+# заполнить OPENROUTER_API_KEY и ключи LANGFUSE_*
+```
 
 ## Чего в этом компоненте нет
 
-Импорт JSON в pg-gym, повтор 104 задач, пять повторов и языковой отбор. Хостовый путь `opencode_run.py` больше не участвует в benchmark-прогоне.
+Импорт JSON в pg-gym, повтор 104 задач, пять повторов и языковой отбор. Хостовый путь `opencode_run.py` больше не участвует в benchmark-прогоне: агент работает в task-контейнере, а ключ модели выдаёт model-gateway.
+
+Полного парного smoke 5×2 пока нет: последний запуск остановлен после четырёх прогонов, сводный `data/reports/smoke-postgres.json` не дописан (см. [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md)).
+
+## Внешние зависимости
+
+Кодовая зависимость только одна — сам pg-gym как источник образцов, и то на стороне harvesting, а не benchmark:
+
+- `repos.toml` указывает `samples_dir = "../db_agent_gym/pg-gym/suites/commit/data/samples"`;
+- `src/db_pipeline/postgres_report.py` и `src/db_pipeline/samples.py` ищут зеркало `pg-gym/stand/pg.git`.
+
+Код `postgres_gym` не импортируется и не устанавливается. Для benchmark-прогона эти пути не нужны: задачи и oracle уже сконвертированы в `data/benchmark/postgres`. Индекс графа собирается из локального клона `data/clones/postgres`.
+
+Стек Langfuse не входит в этот репозиторий: `db_pipeline` только публикует трассы по OTLP на `LANGFUSE_URL` (по умолчанию `http://localhost:3100`). Сам Langfuse поднимается отдельно, сейчас — compose-файлом соседнего репозитория (`db_agent_gym/pg-gym/local/langfuse/docker-compose.yml`). Это внешняя runtime-зависимость окружения, а не кода; при желании Langfuse переезжает внутрь `docker/` без правок в Python.

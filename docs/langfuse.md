@@ -28,8 +28,9 @@ tokens, а trace доступен по сохранённому URL.
 ## Переменные окружения
 
 `LANGFUSE_URL` (для текущей установки `http://localhost:3100`),
-`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`. Значения берутся только из
-окружения; `.env` не читается.
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`. Значения берутся из окружения;
+корневой `.env` загружается только на границе CLI (`load_environment`,
+`override=False`), так что экспортированные переменные имеют приоритет.
 
 ## doctor
 
@@ -40,4 +41,6 @@ tokens, а trace доступен по сохранённому URL.
 - health `/api/public/health` и валидность ключей `/api/public/projects`;
 - probe trace (`--no-probe` отключает).
 
-Секреты и auth-заголовки в payload не попадают.
+Секреты и auth-заголовки в payload не попадают. Сам стек Langfuse в этот
+репозиторий не входит: он поднимается отдельно, а `db_pipeline` только
+публикует трассы по OTLP.
