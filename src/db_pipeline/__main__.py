@@ -21,6 +21,7 @@ from typing import cast
 
 from beartype import beartype
 
+from db_pipeline.environment import load_environment
 from db_pipeline.journal import accepted_count
 from db_pipeline.paths import resolve_data
 from db_pipeline.stages import StageResult, reverify_postgres, run_all, run_harvest
@@ -101,6 +102,7 @@ def _cores_of(values: object) -> list[str]:
 
 @beartype
 def main() -> None:
+    load_environment()
     parser = argparse.ArgumentParser(description="Один проход сборщика для ядра из repos.toml")
     parser.add_argument(
         "--core",

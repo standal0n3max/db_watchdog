@@ -17,13 +17,13 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import cast
 
 from beartype import beartype
 
 from db_pipeline.benchmark import container, convert, paths, security
-from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
 from db_pipeline.benchmark import telemetry
+from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
+from db_pipeline.environment import load_environment
 
 SMOKE_TASKS = (
     "d764d61af316",
@@ -277,6 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 @beartype
 def main(argv: list[str] | None = None) -> int:
+    load_environment()
     args = build_parser().parse_args(argv)
     return int(args.handler(args))
 

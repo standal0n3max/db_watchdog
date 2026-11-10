@@ -8,6 +8,7 @@ __pycache__/
 dist/
 data/
 .env
+!.env.example
 runs/
 *.sqlite
 *.sqlite3
