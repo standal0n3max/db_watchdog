@@ -309,6 +309,25 @@ def cmd_graph_index(args: argparse.Namespace) -> int:
 
 
 @beartype
+def cmd_graph_split(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import split as split_module
+
+    data = None if args.data is None else Path(args.data)
+    split = split_module.derive_split(data)
+    report: dict[str, object] = {
+        "sizes": {section: len(split[section]) for section in split_module.SECTIONS},
+        "holdout_sha256": split_module.holdout_sha256(split["holdout"]),
+        "tune": split["tune"],
+        "dev": split["dev"],
+    }
+    if args.freeze:
+        target = split_module.write_holdout(split)
+        report["frozen"] = str(target)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
+@beartype
 def _smoke_bases(data: Path | None) -> list[str]:
     bases: list[str] = []
     for name in (f"postgres__{item}" for item in SMOKE_TASKS):
@@ -369,6 +388,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     graph_parser.add_argument("--per-base", type=int, default=50)
     graph_parser.set_defaults(handler=cmd_graph_index)
+
+    split_parser = sub.add_parser(
+        "graph-split", help="разбить задачи на dev/tune/holdout и заморозить holdout"
+    )
+    split_parser.add_argument(
+        "--freeze", action="store_true", help="записать holdout в constraints/"
+    )
+    split_parser.set_defaults(handler=cmd_graph_split)
 
     return parser
 
