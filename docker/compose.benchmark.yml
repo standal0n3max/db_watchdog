@@ -1,12 +1,18 @@
-# Стенд benchmark: model-gateway и граф.
-# Контейнер задачи оркестратор создаёт отдельно через docker create.
+# Стенд benchmark: model-gateway и граф — ручной диагностический сценарий.
+#
+# Основной поток smoke оркестратор ведёт сам (одна internal network, gateway и
+# per-task graph-container через docker create), а этот compose остаётся для
+# ручной проверки. Здесь graph работает с постоянной внешней SQLite: в smoke
+# он получает копию union-индекса и свой base/head из oracle текущей задачи.
 #
 # model-gateway подключён к внешней сети (default) и к внутренней bench-internal.
-# Граф подключён только к внутренней сети. Task-container видит только
-# bench-internal и не имеет общего интернет-egress.
+# Граф подключён только к внутренней сети и порт на хост не публикует: MCP
+# доступен по внутреннему DNS (`http://graph:8765/mcp`). Task-container видит
+# только bench-internal и не имеет общего интернет-egress.
 #
-# Секреты (OPENROUTER_API_KEY, LANGFUSE_*) берутся из окружения хоста, из
-# .env они не читаются, если вы не экспортируете их сами.
+# Секреты (OPENROUTER_API_KEY) берутся из окружения хоста. В smoke base/head
+# выставляются автоматически из oracle; здесь BENCH_GRAPH_BASE_SHA задаётся
+# вручную для ручной отладки инструментов.
 
 services:
   model-gateway:
@@ -18,6 +24,8 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?нужен ключ OpenRouter}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       BENCH_ALLOWED_MODELS: ${BENCH_MODEL:-deepseek/deepseek-v4-flash}
+    ports:
+      - "8080:8080"
     networks:
       - default
       - bench-internal
@@ -33,6 +41,9 @@ services:
       BENCH_GRAPH_BASE_SHA: ${BENCH_GRAPH_BASE_SHA:-}
       BENCH_GRAPH_HEAD_SHA: ${BENCH_GRAPH_HEAD_SHA:-}
       BENCH_GRAPH_PORT: "8765"
+      BENCH_GRAPH_PATH: /mcp
+    volumes:
+      - ../data/graph:/data/graph:ro
     networks:
       - bench-internal
     restart: unless-stopped

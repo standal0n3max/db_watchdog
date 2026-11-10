@@ -29,6 +29,7 @@ def _env(name: str, default: str = "") -> str:
 class BenchmarkConfig:
     image: str
     graph_image: str
+    gateway_image: str
     model: str
     provider: str
     max_turns: int
@@ -45,6 +46,7 @@ class BenchmarkConfig:
         return {
             "image": self.image,
             "graph_image": self.graph_image,
+            "gateway_image": self.gateway_image,
             "model": self.model,
             "provider": self.provider,
             "max_turns": self.max_turns,
@@ -66,6 +68,7 @@ def load_config() -> BenchmarkConfig:
     return BenchmarkConfig(
         image=_env("BENCH_TASK_IMAGE", "db-pipeline-bench-postgres:local"),
         graph_image=_env("BENCH_GRAPH_IMAGE", "db-pipeline-graph-postgres:local"),
+        gateway_image=_env("BENCH_GATEWAY_IMAGE", "db-pipeline-bench-gateway:local"),
         model=_env("BENCH_MODEL", "deepseek/deepseek-v4-flash"),
         provider=_env("BENCH_PROVIDER", "pgpro"),
         max_turns=int(_env("BENCH_MAX_TURNS", "50")),
