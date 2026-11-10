@@ -7,3 +7,7 @@ __pycache__/
 *.egg-info/
 dist/
 data/
+.env
+runs/
+*.sqlite
+*.sqlite3
