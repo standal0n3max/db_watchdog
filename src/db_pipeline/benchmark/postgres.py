@@ -61,10 +61,14 @@ def run_in_container(
 
 
 @beartype
-def write_file(container_id: str, path: str, data: bytes) -> None:
+def write_file(container_id: str, path: str, data: bytes, user: str = "") -> None:
     script = 'mkdir -p "$(dirname "$1")" && cat > "$1"'
+    command = ["docker", "exec", "-i"]
+    if user != "":
+        command += ["-u", user]
+    command += [container_id, "sh", "-c", script, "sh", path]
     result = subprocess.run(
-        ["docker", "exec", "-i", container_id, "sh", "-c", script, "sh", path],
+        command,
         input=data,
         capture_output=True,
         check=False,
@@ -215,9 +219,23 @@ def configure(container_id: str, timeout: int = 1800) -> tuple[bool, str]:
 
 @beartype
 def check(container_id: str, tests: list[str] | None = None, timeout: int = 1800) -> tuple[int, str]:
-    tests_arg = f"TESTS=\"{' '.join(tests)}\" " if tests else ""
-    command = f"cd src/test/regress && {tests_arg}make check"
+    # В дереве REL_17 цель ``check`` берёт parallel_schedule и игнорирует TESTS:
+    # один или несколько тестов запускает ``check-tests``. ``parallel_schedule``
+    # создаёт общие таблицы в ``test_setup``, поэтому одиночный тест без него
+    # падает с «relation does not exist» и до эталона, и после.
+    if tests:
+        selected = _with_setup(tests)
+        command = f'cd src/test/regress && make check-tests TESTS="{" ".join(selected)}"'
+    else:
+        command = "cd src/test/regress && make check"
     return run_in_container(container_id, command, timeout=timeout, cwd=WORKSPACE)
+
+
+@beartype
+def _with_setup(tests: list[str]) -> list[str]:
+    if "test_setup" in tests:
+        return tests
+    return ["test_setup", *tests]
 
 
 @beartype

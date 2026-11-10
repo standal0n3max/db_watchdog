@@ -55,6 +55,14 @@ class RegressParseTests(unittest.TestCase):
         self.assertEqual(statuses["int4"], "failed")
 
 
+class RegressSetupTests(unittest.TestCase):
+    def test_setup_is_prepended(self) -> None:
+        self.assertEqual(postgres._with_setup(["eager_aggregate"]), ["test_setup", "eager_aggregate"])
+
+    def test_setup_is_not_duplicated(self) -> None:
+        self.assertEqual(postgres._with_setup(["test_setup", "int4"]), ["test_setup", "int4"])
+
+
 class CutoffTests(unittest.TestCase):
     def test_ancestor_is_allowed(self) -> None:
         cutoff = cutoff_module.build_cutoff("base", 1000, {"base", "older"})
