@@ -44,6 +44,8 @@ class ContainerSpec:
     pids_limit: str = DEFAULT_PIDS
     entrypoint: str = ""
     user: str = ""
+    network_alias: str = ""
+    ports: dict[str, str] = field(default_factory=dict[str, str])
     labels: dict[str, str] = field(default_factory=dict[str, str])
     environment: dict[str, str] = field(default_factory=dict[str, str])
 
@@ -107,6 +109,13 @@ def create_command(spec: ContainerSpec, name: str, context: str = "") -> list[st
     )
     if spec.network != "":
         command += ["--network", spec.network]
+    if spec.network_alias != "":
+        command += ["--network-alias", spec.network_alias]
+    for host_port, container_port in spec.ports.items():
+        if host_port in ("", "0"):
+            command += ["--publish", container_port]
+        else:
+            command += ["--publish", f"{host_port}:{container_port}"]
     if spec.user != "":
         command += ["--user", spec.user]
     for key, value in spec.labels.items():
@@ -284,6 +293,13 @@ def remove_container(container_id: str, context: str = "") -> None:
 
 
 @beartype
+def remove_container_verified(container_id: str, context: str = "") -> bool:
+    """Удаляет контейнер и подтверждает, что он больше не существует."""
+    remove_container(container_id, context=context)
+    return not container_exists(container_id, context=context)
+
+
+@beartype
 def copy_out(container_id: str, source: str, target: Path, context: str = "") -> bool:
     target.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
@@ -312,3 +328,147 @@ def archive_directory(root: Path, names: list[str] | None = None) -> bytes:
 @beartype
 def env_flag(name: str) -> bool:
     return os.environ.get(name, "0") == "1"
+
+
+@beartype
+def network_create(name: str, internal: bool = True, context: str = "") -> None:
+    """Создаёт Docker-сеть. Внутренняя сеть не имеет внешнего egress."""
+    args = ["network", "create"]
+    if internal:
+        args += ["--internal"]
+    args.append(name)
+    result = subprocess.run(
+        docker_command(*args, context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise PipelineError("docker_network", detail or f"network create {name} не удался")
+
+
+@beartype
+def network_connect(
+    network: str,
+    container_id: str,
+    alias: str = "",
+    context: str = "",
+) -> None:
+    """Подключает контейнер к сети, при необходимости с alias."""
+    args = ["network", "connect"]
+    if alias != "":
+        args += ["--alias", alias]
+    args += [network, container_id]
+    result = subprocess.run(
+        docker_command(*args, context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise PipelineError("docker_network", detail or f"connect {container_id} не удался")
+
+
+@beartype
+def network_exists(name: str, context: str = "") -> bool:
+    result = subprocess.run(
+        docker_command(
+            "network", "ls", "--filter", f"name=^{name}$", "--format", "{{.Name}}",
+            context=context,
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() == name
+
+
+@beartype
+def network_remove(name: str, context: str = "") -> None:
+    subprocess.run(
+        docker_command("network", "rm", name, context=context),
+        capture_output=True,
+        check=False,
+    )
+
+
+@beartype
+def container_running(container_id: str, context: str = "") -> bool:
+    result = subprocess.run(
+        docker_command("inspect", "-f", "{{.State.Running}}", container_id, context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() == "true"
+
+
+@beartype
+def container_exists(container_id: str, context: str = "") -> bool:
+    result = subprocess.run(
+        docker_command("inspect", "-f", "{{.Id}}", container_id, context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+@beartype
+def container_ip(container_id: str, network: str, context: str = "") -> str:
+    result = subprocess.run(
+        docker_command(
+            "inspect",
+            "-f",
+            f'{{{{index .NetworkSettings.Networks "{network}" "IPAddress"}}}}',
+            container_id,
+            context=context,
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip()
+
+
+@beartype
+def published_port(container_id: str, container_port: str, context: str = "") -> str:
+    """Возвращает host-порт для опубликованного порта контейнера."""
+    result = subprocess.run(
+        docker_command(
+            "inspect",
+            "-f",
+            f'{{{{(index (index .NetworkSettings.Ports "{container_port}/tcp") 0).HostPort}}}}',
+            container_id,
+            context=context,
+        ),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    value = result.stdout.strip()
+    return "" if value in ("", "<no value>") else value
+
+
+@beartype
+def wait_http_ready(
+    url: str,
+    timeout: int = 120,
+    interval: float = 1.0,
+) -> bool:
+    """Ждёт HTTP 200 по адресу: используется как readiness gateway и графа."""
+    import urllib.error
+    import urllib.request
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+        time.sleep(interval)
+    return False

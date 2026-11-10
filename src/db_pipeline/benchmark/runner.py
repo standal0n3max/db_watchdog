@@ -10,6 +10,10 @@
 6. выполнить targeted и полный regression, посчитать verdict;
 7. опубликовать трассу Langfuse и записать run record.
 
+Режим ``graph`` использует ту же internal-сеть, что и ``bare``, но подключает
+per-task graph-container и remote MCP-конфиг; ``bare`` MCP не видит. Эффективный
+OpenCode-конфиг генерируется на каждый run и его hash попадает в manifest.
+
 Run record фиксирует версии OpenCode, образов и конфигурации. Локальная копия
 остаётся в игнорируемом ``data/runs``.
 """
@@ -21,6 +25,7 @@ import tempfile
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from beartype import beartype
 
@@ -31,6 +36,7 @@ from db_pipeline.benchmark import (
     paths,
     postgres,
     security,
+    session as smoke_session,
     telemetry,
     tree,
 )
@@ -48,6 +54,7 @@ def run_one(
     config: BenchmarkConfig | None = None,
     data: Path | None = None,
     keep_container: bool = False,
+    smoke: smoke_session.SmokeSession | None = None,
 ) -> dict[str, object]:
     if mode not in MODES:
         raise PipelineError("run", f"режим {mode} неизвестен")
@@ -59,7 +66,6 @@ def run_one(
     phases: dict[str, dict[str, object]] = {}
     transcript = opencode.AgentTranscript()
     hidden: list[str] = []
-    recreated: list[str] = []
     record: dict[str, object] = {
         "func": name,
         "mode": mode,
@@ -67,19 +73,76 @@ def run_one(
         "started": started.isoformat(timespec="seconds"),
         "manifest": cfg.to_manifest(),
         "oracle": {"head": oracle["head"], "base": oracle["base"]},
+        "effective": {"base": oracle["base"], "head": oracle["head"]},
     }
 
+    owns_session = smoke is None
+    active = smoke or smoke_session.open_session(cfg, data)
+    graph_id = ""
+    try:
+        if mode == "graph":
+            graph_id = smoke_session.start_graph(
+                active, str(oracle["base"]), str(oracle["head"]), data
+            )
+            record["graph"] = graph_id
+        _run_in_container(active, name, mode, cfg, public, oracle, data, record, phases, transcript,
+                          keep_container, hidden)
+        if graph_id != "":
+            record["cutoff"] = _verify_cutoff(graph_id, oracle, active.context)
+    finally:
+        if graph_id != "":
+            smoke_session.stop_graph(active, graph_id)
+        if owns_session:
+            record["cleanup"] = smoke_session.close_session(active)
+    record["integration"] = _integration(record, mode, phases, transcript, hidden, graph_id)
+    if not _integration_ok(record.get("integration")):
+        record["pass"] = False
+        record["verdict"] = "FAIL"
+        record["integration_failure"] = True
+    _write_record(record, data)
+    return record
+
+
+@beartype
+def _integration_ok(integration: object) -> bool:
+    if not isinstance(integration, dict):
+        return False
+    mapping = cast("dict[str, object]", integration)
+    return bool(mapping.get("ok"))
+
+
+@beartype
+def _run_in_container(
+    active: smoke_session.SmokeSession,
+    name: str,
+    mode: str,
+    cfg: BenchmarkConfig,
+    public: dict[str, object],
+    oracle: dict[str, object],
+    data: Path | None,
+    record: dict[str, object],
+    phases: dict[str, dict[str, object]],
+    transcript: opencode.AgentTranscript,
+    keep_container: bool,
+    hidden: list[str],
+) -> None:
+    context = active.context
     spec = container.ContainerSpec(
         image=cfg.image,
         workspace=postgres.WORKSPACE,
-        network=cfg.internal_network if mode == "graph" else cfg.network,
+        network=active.network,
         user=postgres.BENCH_USER,
         labels={"bench.task": name, "bench.mode": mode},
-        environment={"POSTGRES_GYM_HARNESS_CONFIG": _harness_env(cfg)},
+        environment={
+            "POSTGRES_GYM_HARNESS_CONFIG": _harness_env(cfg),
+            # Внутренний ключ провайдера: шлюз его не проверяет, реального
+            # OPENROUTER_API_KEY task-container не видит.
+            "POSTGRES_GYM_PROVIDER_KEY": "bench-internal-key",
+        },
     )
-    context = ""
     container_id = container.create_container(spec, context=context)
     record["container"] = container_id
+    started = datetime.now(UTC)
     try:
         mounts = container.inspect_mounts(container_id, context=context)
         record["mounts"] = mounts
@@ -89,20 +152,32 @@ def run_one(
         _phase(phases, "prepare", _prepare(container_id, oracle, data, context))
         _phase(phases, "prebuild", _prebuild(container_id))
 
-        hidden, recreated = _hide_and_sever(container_id, public, oracle)
+        hidden_list, protected_list = _hide_and_sever(container_id, public)
+        hidden.extend(hidden_list)
         _phase(phases, "hide", CheckOutcome(ok=True, total=len(hidden)))
 
         prompt = _prompt(public, mode)
-        _phase(phases, "agent", _run_agent(container_id, prompt, cfg, record, transcript))
+        _phase(
+            phases,
+            "agent",
+            _run_agent(container_id, prompt, cfg, mode, record, transcript, context),
+        )
 
-        restored = postgres.restore_tests(container_id, hidden)
-        _phase(phases, "restore", CheckOutcome(ok=sorted(restored) == sorted(hidden), total=len(restored)))
-
+        # Gate-ы и diff снимаются сразу после агента, пока скрытые тесты ещё
+        # изъяты: иначе восстановление тестов выглядит как правка тестов агентом.
         changed = postgres.changed_files(container_id)
+        recreated = _recreated(container_id, protected_list)
         gate_results = security.gates(changed, recreated)
         record["gates"] = {key: gate.to_dict() for key, gate in gate_results.items()}
         record["diff"] = postgres.worktree_diff(container_id)
         record["diff_size"] = len(str(record["diff"]).splitlines())
+
+        restored = postgres.restore_tests(container_id, hidden)
+        _phase(
+            phases,
+            "restore",
+            CheckOutcome(ok=sorted(restored) == sorted(hidden), total=len(restored)),
+        )
 
         _phase(phases, "build", _build(container_id))
         _phase(phases, "install", _install(container_id))
@@ -122,12 +197,79 @@ def run_one(
         record["tool_events"] = [asdict(t) for t in transcript.tools]
         record["seconds"] = round((datetime.now(UTC) - started).total_seconds(), 1)
 
-        record["langfuse"] = _publish_trace(cfg, trace_id, name, mode, record, phases, transcript)
+        record["langfuse"] = _publish_trace(
+            cfg, str(record["trace_id"]), name, mode, record, phases, transcript
+        )
         _write_record(record, data)
-        return record
     finally:
         if not keep_container:
             container.remove_container(container_id, context=context)
+
+
+@beartype
+def _verify_cutoff(graph_id: str, oracle: dict[str, object], context: str) -> dict[str, object]:
+    """Проверяет отказ MCP по ``head_sha`` текущей задачи, пока контейнер жив."""
+    import subprocess
+
+    head = str(oracle["head"])
+    script = (
+        "python -m db_pipeline.benchmark.graph.probe_client "
+        f"http://{smoke_session.GRAPH_ALIAS}:{smoke_session.GRAPH_PORT}{smoke_session.GRAPH_PATH} "
+        f"{head}"
+    )
+    result = subprocess.run(
+        container.docker_command("exec", "-i", graph_id, "sh", "-lc", script, context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    report: dict[str, object] = {"head_sha": head, "returncode": result.returncode}
+    for line in reversed(result.stdout.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                loaded: object = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(loaded, dict):
+                report.update(cast("dict[str, object]", loaded))
+            break
+    report["ok"] = report.get("returncode") == 0 and bool(report.get("ok"))
+    return report
+
+
+@beartype
+def _integration(
+    record: dict[str, object],
+    mode: str,
+    phases: dict[str, dict[str, object]],
+    transcript: opencode.AgentTranscript,
+    hidden: list[str],
+    graph_id: str,
+) -> dict[str, object]:
+    """Проверяет работоспособность интеграции: MCP, trace, cutoff и cleanup."""
+    trace = record.get("langfuse")
+    trace_ok = False
+    if isinstance(trace, dict):
+        trace_map = cast("dict[str, object]", trace)
+        trace_ok = bool(trace_map.get("sent"))
+    mcp_calls = _mcp_calls(transcript)
+    cutoff = record.get("cutoff")
+    cutoff_ok = isinstance(cutoff, dict) and bool(cast("dict[str, object]", cutoff).get("ok"))
+    details: dict[str, object] = {
+        "trace_published": trace_ok,
+        "mcp_calls": mcp_calls,
+        "hidden_restored": phases.get("restore", {}).get("ok") is True,
+        "graph_container": graph_id,
+    }
+    if mode == "graph":
+        details["mcp_used"] = mcp_calls > 0
+        details["cutoff_enforced"] = cutoff_ok
+    ok = trace_ok and details["hidden_restored"] is True
+    if mode == "graph":
+        ok = ok and mcp_calls > 0 and graph_id != "" and cutoff_ok
+    details["ok"] = ok
+    return details
 
 
 @beartype
@@ -194,8 +336,13 @@ def _prebuild(container_id: str) -> CheckOutcome:
 
 @beartype
 def _hide_and_sever(
-    container_id: str, public: dict[str, object], oracle: dict[str, object]
+    container_id: str, public: dict[str, object]
 ) -> tuple[list[str], list[str]]:
+    """Скрывает тесты, удаляет их из дерева и обрывает историю.
+
+    Возвращает ``(hidden, protected)``: скрытые файлы и полный набор путей,
+    которые агент не должен пересоздавать (graded и варианты ``_N.out``).
+    """
     graded = as_str_list(public.get("graded_by"))
     hidden = postgres.hide_tests(container_id, graded)
     variants = _expected_variants(container_id, graded)
@@ -205,8 +352,8 @@ def _hide_and_sever(
     sever_ok, sever_out = postgres.sever_history(container_id)
     if not sever_ok:
         raise PipelineError("sever", sever_out[-2000:])
-    recreated = _recreated(container_id, graded + variants)
-    return sorted(set(hidden)), recreated
+    protected = sorted(set(graded) | set(variants))
+    return sorted(set(hidden)), protected
 
 
 @beartype
@@ -258,10 +405,27 @@ def _run_agent(
     container_id: str,
     prompt: str,
     cfg: BenchmarkConfig,
+    mode: str,
     record: dict[str, object],
     transcript: opencode.AgentTranscript,
+    context: str,
 ) -> CheckOutcome:
     postgres.write_file(container_id, "/work/prompt.txt", prompt.encode("utf-8"))
+    config = opencode.build_config(
+        mode,
+        provider=cfg.provider,
+        model=cfg.model,
+        context_length=32768,
+        max_tokens=4096,
+    )
+    config_text = opencode.config_text(config)
+    record["opencode_config_sha256"] = opencode.config_sha256(config)
+    postgres.write_file(
+        container_id,
+        opencode.CONFIG_PATH,
+        config_text.encode("utf-8"),
+        user=postgres.BENCH_USER,
+    )
     agent_config = opencode.AgentConfig(
         provider=cfg.provider,
         model=cfg.model,
@@ -305,32 +469,51 @@ def _install(container_id: str) -> CheckOutcome:
 
 @beartype
 def _test(container_id: str, oracle: dict[str, object]) -> tuple[CheckOutcome, bool, bool]:
+    """Целевой тест и полный regression: verdict как в commit-suite.
+
+    ``target_ok`` требует, чтобы целевой тест прошёл. ``noregress_ok`` требует,
+    чтобы полный regression не дал падений сверх ожидаемых целевых тестов.
+    """
     expected = as_str_list(oracle.get("expected_tests"))
-    code, targeted_output = postgres.check(container_id, expected or None)
+    code_targeted, targeted_output = postgres.check(container_id, expected or None)
     statuses = postgres.parse_statuses(targeted_output)
-    failed = postgres.parse_failed(targeted_output)
-    total = postgres.parse_total(targeted_output)
-    if expected and not all(statuses.get(name) in ("passed", "failed", "skipped") for name in expected):
-        _, full_output = postgres.check(container_id, None)
-        targeted_output += "\n" + full_output
-        failed = postgres.parse_failed(targeted_output)
-        total = postgres.parse_total(targeted_output)
+    code_full, full_output = postgres.check(container_id, None)
+    combined = targeted_output + "\n" + full_output
+    statuses = {**postgres.parse_statuses(full_output), **statuses}
+    failed = postgres.parse_failed(combined)
+    total = postgres.parse_total(full_output) or postgres.parse_total(targeted_output)
     target_ok = bool(expected) and all(statuses.get(name) == "passed" for name in expected)
     unexpected = sorted(set(failed) - set(expected))
-    noregress_ok = code == 0 and len(unexpected) == 0
+    noregress_ok = code_full == 0 and len(unexpected) == 0
     outcome = CheckOutcome(
-        ok=code == 0,
+        ok=code_targeted == 0,
         total=total,
         failed=failed,
-        tail=targeted_output[-2000:] if failed else "",
+        tail=combined[-2000:] if failed else "",
     )
     return outcome, target_ok, noregress_ok
 
 
+MCP_TOOL_NAMES = frozenset(
+    {"find_code_symbols", "read_versioned_source", "search_git_history"}
+)
+
+
 @beartype
 def _mcp_calls(transcript: opencode.AgentTranscript) -> int:
-    names = {"find_code_symbols", "read_versioned_source", "search_git_history"}
-    return sum(1 for tool in transcript.tools if tool.tool in names)
+    """Считает вызовы MCP-инструментов графа.
+
+    OpenCode префиксует инструменты именем MCP-сервера (``graph_find_code_symbols``),
+    поэтому имя проверяется и по точному совпадению, и по суффиксу.
+    """
+    return sum(1 for tool in transcript.tools if _is_mcp_tool(tool.tool))
+
+
+@beartype
+def _is_mcp_tool(name: str) -> bool:
+    if name in MCP_TOOL_NAMES:
+        return True
+    return any(name.endswith(f"_{mcp_name}") for mcp_name in MCP_TOOL_NAMES)
 
 
 @beartype
@@ -433,7 +616,8 @@ def _publish_trace(
 @beartype
 def _write_record(record: dict[str, object], data: Path | None) -> Path:
     folder = paths.runs_dir(data)
-    target = folder / f"{record['func']}__{record['mode']}.json"
+    run_id = str(record.get("trace_id") or record["func"])
+    target = folder / f"{record['func']}__{record['mode']}__{run_id}.json"
     target.write_text(
         json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

@@ -17,7 +17,10 @@ from typing import cast
 
 from beartype import beartype
 
+from db_pipeline.errors import PipelineError
+
 DEFAULT_MAX_TURNS = 50
+MODES = ("bare", "graph")
 
 
 @beartype
@@ -79,7 +82,7 @@ class AgentTranscript:
             counts[tool.tool] = counts.get(tool.tool, 0) + 1
         return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
-    def totals(self) -> dict[str, float]:
+    def totals(self) -> dict[str, int | float]:
         return {
             "calls": len(self.generations),
             "tools": len(self.tools),
@@ -212,10 +215,77 @@ def run_command(config: AgentConfig, prompt: str) -> list[str]:
         "run",
         "--pure",
         "--auto",
-        "--standalone",
         "--format",
         "json",
         "--model",
         f"{config.provider}/{config.model}",
         prompt,
     ]
+
+
+GRAPH_MCP_URL = "http://graph:8765/mcp"
+CONFIG_PATH = "/home/bench/.config/opencode/opencode.jsonc"
+
+
+@beartype
+def build_config(
+    mode: str,
+    provider: str,
+    model: str,
+    context_length: int = 32768,
+    max_tokens: int = 4096,
+) -> dict[str, object]:
+    """Строит эффективный OpenCode-конфиг: bare без MCP, graph с remote MCP.
+
+    Секретов в конфиге нет: ключ провайдера подставляется из
+    ``POSTGRES_GYM_PROVIDER_KEY`` на стороне контейнера. ``graph``-режим
+    подключает три инструмента по Streamable HTTP с увеличенным таймаутом.
+    """
+    if mode not in MODES:
+        raise PipelineError("opencode", f"режим {mode} неизвестен")
+    config: dict[str, object] = {
+        "$schema": "https://opencode.ai/config.json",
+        "autoupdate": False,
+        "share": "disabled",
+        "provider": {
+            provider: {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "Model Gateway",
+                "options": {
+                    "baseURL": "http://model-gateway:8080/v1",
+                    "apiKey": "{env:POSTGRES_GYM_PROVIDER_KEY}",
+                },
+                "models": {
+                    model: {
+                        "name": model,
+                        "limit": {"context": context_length, "output": max_tokens},
+                    }
+                },
+            }
+        },
+        "permission": {"webfetch": "deny", "external_directory": "deny"},
+        "tools": {"webfetch": False},
+    }
+    if mode == "graph":
+        config["mcp"] = {
+            "graph": {
+                "type": "remote",
+                "url": GRAPH_MCP_URL,
+                "enabled": True,
+                "oauth": False,
+                "timeout": 120000,
+            }
+        }
+    return config
+
+
+@beartype
+def config_text(config: dict[str, object]) -> str:
+    return json.dumps(config, ensure_ascii=False, indent=2) + "\n"
+
+
+@beartype
+def config_sha256(config: dict[str, object]) -> str:
+    import hashlib
+
+    return hashlib.sha256(config_text(config).encode("utf-8")).hexdigest()
