@@ -1,0 +1,43 @@
+# Стенд benchmark: model-gateway и граф.
+# Контейнер задачи оркестратор создаёт отдельно через docker create.
+#
+# model-gateway подключён к внешней сети (default) и к внутренней bench-internal.
+# Граф подключён только к внутренней сети. Task-container видит только
+# bench-internal и не имеет общего интернет-egress.
+#
+# Секреты (OPENROUTER_API_KEY, LANGFUSE_*) берутся из окружения хоста, из
+# .env они не читаются, если вы не экспортируете их сами.
+
+services:
+  model-gateway:
+    build:
+      context: ..
+      dockerfile: docker/model-gateway/Dockerfile
+    image: db-pipeline-bench-gateway:local
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?нужен ключ OpenRouter}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      BENCH_ALLOWED_MODELS: ${BENCH_MODEL:-deepseek/deepseek-v4-flash}
+    networks:
+      - default
+      - bench-internal
+    restart: unless-stopped
+
+  graph:
+    build:
+      context: ..
+      dockerfile: docker/graph.Dockerfile
+    image: db-pipeline-graph-postgres:local
+    environment:
+      BENCH_GRAPH_DB: /data/graph/postgres.sqlite
+      BENCH_GRAPH_BASE_SHA: ${BENCH_GRAPH_BASE_SHA:-}
+      BENCH_GRAPH_HEAD_SHA: ${BENCH_GRAPH_HEAD_SHA:-}
+      BENCH_GRAPH_PORT: "8765"
+    networks:
+      - bench-internal
+    restart: unless-stopped
+
+networks:
+  bench-internal:
+    name: bench-internal
+    internal: true
