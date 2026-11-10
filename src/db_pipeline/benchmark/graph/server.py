@@ -6,7 +6,9 @@
 ``head_sha`` и его потомки не выдаются.
 
 Сервер живёт в отдельном контейнере и слушает Streamable HTTP. Порт и путь
-берутся из переменных ``BENCH_GRAPH_PORT`` и ``BENCH_GRAPH_PATH``.
+берутся из переменных ``BENCH_GRAPH_PORT`` и ``BENCH_GRAPH_PATH``. Отсечка
+вычисляется по самому индексу (parent graph), без доступа к git-клону:
+достаточно ``base_sha`` и запрещённого ``head_sha``.
 
 Индекс открывается в режиме только для чтения на запросы: ``audit`` пишется в
 ту же базу, поэтому соединение переиспользуется.
@@ -35,47 +37,56 @@ def _db_path() -> Path:
 
 
 @beartype
-def _cutoff() -> Cutoff:
-    raw = os.environ.get("BENCH_GRAPH_BASE_SHA", "")
-    limit = int(os.environ.get("BENCH_GRAPH_LIMIT", "4000"))
-    import subprocess
+def cutoff_from_index(db: Path, base_sha: str, forbidden_head: str = "") -> Cutoff:
+    """Строит отсечку по индексу: предки ``base_sha`` минус ``head_sha``.
 
-    repo = paths.pg_clone()
-    base = raw or _git(repo, "rev-parse", "HEAD")
-    if base == "":
-        return build_cutoff("", 0, set())
-    time_text = _git(repo, "show", "-s", "--format=%ct", base)
-    try:
-        base_time = int(time_text or "0")
-    except ValueError:
-        base_time = 0
-    reachable = subprocess.run(
-        ["git", "-C", str(repo), "rev-list", f"--max-count={limit}", base],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.split()
-    head = os.environ.get("BENCH_GRAPH_HEAD_SHA", "")
-    return build_cutoff(base, base_time, set(reachable), forbidden_head=head)
+    ``head_sha`` и все его потомки в индексе не выдаются. Доступ к git не нужен:
+    предковство берётся из таблицы ``commits``.
+    """
+    with closing(store.open_store(db)) as conn:
+        base_time = store.commit_time(conn, base_sha) or 0
+        reachable = store.ancestors(conn, base_sha)
+        reachable.add(base_sha)
+    return build_cutoff(base_sha, base_time, reachable, forbidden_head=forbidden_head)
 
 
 @beartype
-def _git(repo: Path, *args: str) -> str:
-    import subprocess
+def _cutoff(db: Path) -> Cutoff:
+    base = os.environ.get("BENCH_GRAPH_BASE_SHA", "")
+    head = os.environ.get("BENCH_GRAPH_HEAD_SHA", "")
+    if base == "":
+        return build_cutoff("", 0, set(), forbidden_head=head)
+    return cutoff_from_index(db, base, forbidden_head=head)
 
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
+
+@beartype
+def _wait_for_db(db: Path, timeout: int = 120) -> bool:
+    """Ждёт, пока оркестратор запишет индекс: ``docker cp`` даёт root-unwritable файл."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    last = -1
+    stable = 0
+    while time.monotonic() < deadline:
+        if db.is_file():
+            size = db.stat().st_size
+            if size > 0 and size == last:
+                stable += 1
+                if stable >= 2:
+                    return True
+            else:
+                stable = 0
+            last = size
+        time.sleep(1)
+    return db.is_file()
 
 
 @beartype
 def serve() -> None:
-    server = MCPServer("postgres-graph")
     db = _db_path()
-    cutoff = _cutoff()
+    _wait_for_db(db)
+    server = MCPServer("postgres-graph")
+    cutoff = _cutoff(db)
 
     @server.tool()
     def find_code_symbols(name: str, limit: int = 20) -> dict[str, object]:
@@ -84,10 +95,23 @@ def serve() -> None:
             return tools.find_code_symbols(conn, cutoff, name, limit)
 
     @server.tool()
-    def read_versioned_source(revision: str, path: str) -> dict[str, object]:
-        """Read file metadata at a pinned revision if it is an ancestor of base_sha."""
+    def read_versioned_source(
+        revision: str,
+        path: str,
+        offset: int = 0,
+        limit: int = 8192,
+        start_line: int | None = None,
+        end_line: int | None = None,
+    ) -> dict[str, object]:
+        """Read a file fragment at a pinned revision if it is an ancestor of base_sha.
+
+        ``offset``/``limit`` are bytes; ``start_line``/``end_line`` (1-based) take
+        priority and return whole lines.
+        """
         with closing(store.open_store(db)) as conn:
-            return tools.read_versioned_source(conn, cutoff, revision, path)
+            return tools.read_versioned_source(
+                conn, cutoff, revision, path, offset, limit, start_line, end_line
+            )
 
     @server.tool()
     def search_git_history(query: str, limit: int = 20) -> dict[str, object]:
