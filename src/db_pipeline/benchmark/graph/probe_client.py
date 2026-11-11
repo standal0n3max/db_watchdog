@@ -17,13 +17,28 @@ import json
 import sys
 from contextlib import closing
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from beartype import beartype
 
 from db_pipeline.benchmark.graph import store
 
+if TYPE_CHECKING:
+    from mcp import ClientSession
+
 EXPECTED_TOOLS = ["find_code_symbols", "read_versioned_source", "search_git_history"]
+EXPECTED_TOOLS_V2 = [
+    "find_code_symbols",
+    "read_versioned_source",
+    "search_git_history",
+    "symbol_history",
+    "tests_to_code",
+    "similar_fixes",
+    "find_error_origin",
+]
+# ``list_tools`` возвращает имена отсортированными, поэтому сравниваем именно с
+# сортированным списком: иначе проверка падала бы на порядке, а не на составе.
+EXPECTED_TOOLS_V2_SORTED = sorted(EXPECTED_TOOLS_V2)
 
 
 @beartype
@@ -99,7 +114,8 @@ async def run_probe(url: str, db: Path, base_sha: str, head_sha: str) -> dict[st
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             tools = await session.list_tools()
-            report["tools"] = sorted(tool.name for tool in tools.tools)
+            tool_names = sorted(tool.name for tool in tools.tools)
+            report["tools"] = tool_names
             symbol = _first_symbol(db, base_sha)
             revision, path = _first_revision_path(db, base_sha)
             report["symbol"] = symbol
@@ -115,17 +131,60 @@ async def run_probe(url: str, db: Path, base_sha: str, head_sha: str) -> dict[st
                 report["read_versioned_source"] = _text(source)
             history = await session.call_tool("search_git_history", {"query": "fix", "limit": 3})
             report["search_git_history"] = _text(history)
+            if "symbol_history" in tool_names:
+                report.update(await _probe_v2(session))
             refused = await session.call_tool(
                 "read_versioned_source",
                 {"revision": head_sha, "path": path or "src/backend/x.c"},
             )
             report["head_refusal"] = _text(refused)
+    v2_ok = True
+    if "symbol_history" in tool_names:
+        v2_ok = all(
+            "results" in str(report.get(name))
+            for name in (
+                "symbol_history",
+                "tests_to_code",
+                "similar_fixes",
+                "find_error_origin",
+            )
+        )
     report["ok"] = (
-        report.get("tools") == EXPECTED_TOOLS
+        v2_ok
+        and tool_names in (EXPECTED_TOOLS, EXPECTED_TOOLS_V2_SORTED)
         and "results" in str(report.get("find_code_symbols"))
         and "content" in str(report.get("read_versioned_source"))
         and "cutoff" in str(report.get("head_refusal"))
     )
+    return report
+
+
+@beartype
+async def _probe_v2(session: object) -> dict[str, object]:
+    """По одному вызову каждого инструмента v2: форма ответа, а не качество.
+
+    ``session`` принимается как ``object``: ``ClientSession`` импортируется
+    только под ``TYPE_CHECKING``, и beartype не может разрешить строковую
+    аннотацию в рантайме. Внутри тип восстанавливается ``cast``.
+    """
+    active = cast("ClientSession", session)
+    report: dict[str, object] = {}
+    history = await active.call_tool(
+        "symbol_history", {"path": "src/backend/executor/nodeHashjoin.c", "name": "ExecInitHashJoin"}
+    )
+    report["symbol_history"] = _text(history)
+    tests = await active.call_tool(
+        "tests_to_code", {"test": "src/test/regress/sql/aggregates.sql"}
+    )
+    report["tests_to_code"] = _text(tests)
+    similar = await active.call_tool(
+        "similar_fixes", {"query": "hash join", "limit": 3}
+    )
+    report["similar_fixes"] = _text(similar)
+    origin = await active.call_tool(
+        "find_error_origin", {"message": "could not open file"}
+    )
+    report["find_error_origin"] = _text(origin)
     return report
 
 

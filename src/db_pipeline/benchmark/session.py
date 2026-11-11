@@ -32,6 +32,7 @@ GRAPH_ALIAS = "graph"
 GRAPH_PORT = "8765"
 GRAPH_PATH = "/mcp"
 GRAPH_DB_IN_CONTAINER = "/tmp/graph.sqlite"
+HISTORY_DB_IN_CONTAINER = "/tmp/history.sqlite"
 
 
 @beartype
@@ -113,27 +114,44 @@ def start_graph(
     head_sha: str,
     data: Path | None = None,
 ) -> str:
-    """Поднимает одноразовый graph-container для конкретной задачи."""
+    """Поднимает одноразовый graph-container для конкретной задачи.
+
+    Если рядом с индексом лежит производный ``history.sqlite``, он тоже
+    копируется в контейнер и включает инструменты v2. Его отсутствие не ломает
+    v1: контейнер просто остаётся с тремя инструментами.
+    """
     db = paths.graph_dir(data) / "postgres.sqlite"
     if not db.is_file():
         raise PipelineError("graph", f"нет индекса {db}: сначала graph-index")
+    history_db = db.parent / "history.sqlite"
+    has_history = history_db.is_file()
+    environment = {
+        "BENCH_GRAPH_DB": GRAPH_DB_IN_CONTAINER,
+        "BENCH_GRAPH_BASE_SHA": base_sha,
+        "BENCH_GRAPH_HEAD_SHA": head_sha,
+        "BENCH_GRAPH_PORT": GRAPH_PORT,
+        "BENCH_GRAPH_PATH": GRAPH_PATH,
+    }
+    if has_history:
+        environment["BENCH_GRAPH_HISTORY_DB"] = HISTORY_DB_IN_CONTAINER
     spec = container.ContainerSpec(
         image=session.cfg.graph_image,
         workspace="/opt/db-pipeline",
         network=session.network,
         network_alias=GRAPH_ALIAS,
         labels={"bench.role": "graph"},
-        environment={
-            "BENCH_GRAPH_DB": GRAPH_DB_IN_CONTAINER,
-            "BENCH_GRAPH_BASE_SHA": base_sha,
-            "BENCH_GRAPH_HEAD_SHA": head_sha,
-            "BENCH_GRAPH_PORT": GRAPH_PORT,
-            "BENCH_GRAPH_PATH": GRAPH_PATH,
-        },
+        environment=environment,
     )
     graph_id = container.create_container(spec, name=f"bench-graph-{uuid.uuid4().hex[:8]}", context=session.context)
     container.start_detached(graph_id, context=session.context)
     container.write_in(graph_id, GRAPH_DB_IN_CONTAINER, db.read_bytes(), context=session.context)
+    if has_history:
+        container.write_in(
+            graph_id,
+            HISTORY_DB_IN_CONTAINER,
+            history_db.read_bytes(),
+            context=session.context,
+        )
     session.graph_ids.append(graph_id)
     if not _graph_ready(graph_id, session.context):
         container.remove_container(graph_id, context=session.context)

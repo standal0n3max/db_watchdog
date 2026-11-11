@@ -73,12 +73,12 @@ class McpCallDetectionTests(unittest.TestCase):
                 "bash",
             ]
         )
-        self.assertEqual(runner._mcp_calls(transcript), 3)
+        self.assertEqual(runner.mcp_calls(transcript), 3)
 
     def test_zero_without_mcp(self) -> None:
         from db_pipeline.benchmark import runner
 
-        self.assertEqual(runner._mcp_calls(self._transcript(["grep", "edit", "bash"])), 0)
+        self.assertEqual(runner.mcp_calls(self._transcript(["grep", "edit", "bash"])), 0)
 
 
 class IndexParseTests(unittest.TestCase):

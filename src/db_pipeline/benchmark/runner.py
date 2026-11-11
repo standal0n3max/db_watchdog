@@ -192,7 +192,7 @@ def _run_in_container(
         record["phases"] = phases
         record["agent"] = transcript.totals()
         record["tool_counts"] = transcript.tool_counts()
-        record["mcp_calls"] = _mcp_calls(transcript)
+        record["mcp_calls"] = mcp_calls(transcript)
         record["generations"] = [asdict(g) for g in transcript.generations]
         record["tool_events"] = [asdict(t) for t in transcript.tools]
         record["seconds"] = round((datetime.now(UTC) - started).total_seconds(), 1)
@@ -253,21 +253,21 @@ def _integration(
     if isinstance(trace, dict):
         trace_map = cast("dict[str, object]", trace)
         trace_ok = bool(trace_map.get("sent"))
-    mcp_calls = _mcp_calls(transcript)
+    calls = mcp_calls(transcript)
     cutoff = record.get("cutoff")
     cutoff_ok = isinstance(cutoff, dict) and bool(cast("dict[str, object]", cutoff).get("ok"))
     details: dict[str, object] = {
         "trace_published": trace_ok,
-        "mcp_calls": mcp_calls,
+        "mcp_calls": calls,
         "hidden_restored": phases.get("restore", {}).get("ok") is True,
         "graph_container": graph_id,
     }
     if mode == "graph":
-        details["mcp_used"] = mcp_calls > 0
+        details["mcp_used"] = calls > 0
         details["cutoff_enforced"] = cutoff_ok
-    ok = trace_ok and details["hidden_restored"] is True
+    ok: bool = trace_ok and details["hidden_restored"] is True
     if mode == "graph":
-        ok = ok and mcp_calls > 0 and graph_id != "" and cutoff_ok
+        ok = ok and calls > 0 and graph_id != "" and cutoff_ok
     details["ok"] = ok
     return details
 
@@ -392,10 +392,13 @@ def _prompt(public: dict[str, object], mode: str) -> str:
     text = task_rules.build_prompt(public)
     if mode == "graph":
         text += (
-            "\n\nBefore editing, use the MCP tools find_code_symbols, "
-            "read_versioned_source and search_git_history to locate the relevant "
-            "code and its history. Any revision the tools return is at or before "
-            "the cutoff commit."
+            "\n\nBefore editing, use the MCP tools to locate the relevant code and "
+            "its history. read_versioned_source and find_code_symbols show the code "
+            "at or before the cutoff; symbol_history shows how a function changed; "
+            "tests_to_code maps a regression test to the code it exercises; "
+            "similar_fixes finds past commits with a similar intent; "
+            "find_error_origin locates the code that prints an error message. "
+            "Any revision the tools return is at or before the cutoff commit."
         )
     return text
 
@@ -495,12 +498,20 @@ def _test(container_id: str, oracle: dict[str, object]) -> tuple[CheckOutcome, b
 
 
 MCP_TOOL_NAMES = frozenset(
-    {"find_code_symbols", "read_versioned_source", "search_git_history"}
+    {
+        "find_code_symbols",
+        "read_versioned_source",
+        "search_git_history",
+        "symbol_history",
+        "tests_to_code",
+        "similar_fixes",
+        "find_error_origin",
+    }
 )
 
 
 @beartype
-def _mcp_calls(transcript: opencode.AgentTranscript) -> int:
+def mcp_calls(transcript: opencode.AgentTranscript) -> int:
     """Считает вызовы MCP-инструментов графа.
 
     OpenCode префиксует инструменты именем MCP-сервера (``graph_find_code_symbols``),
