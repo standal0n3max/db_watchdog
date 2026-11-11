@@ -392,11 +392,7 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark.graph import split as split_module
 
     data = None if args.data is None else Path(args.data)
-    active_split = split_module.derive_split(data)
-    if args.section == "frozen":
-        names = split_module.read_holdout()
-    else:
-        names = active_split[args.section]
+    names = _pairwise_names(args, data)
     if len(names) == 0:
         print(json.dumps({"error": f"секция {args.section} пуста"}, ensure_ascii=False))
         return 2
@@ -416,16 +412,33 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
                     records.append(_smoke_run(name, mode, data, session))
     finally:
         cleanup = smoke_session.close_session(session)
-    report = eval_module.build_report(data, args.section)
+    # Отчёт считается по записям этого прогона, а не по всему ``data/runs``:
+    # иначе probe смешался бы со старым tune и повторы перенумеровались.
+    report = eval_module.build_report(data, args.section, records=records)
     report["section"] = args.section
+    report["tasks"] = names
+    report["budget"] = guard
     report["cleanup"] = cleanup
-    target = paths.reports_dir(data) / f"pairwise-{args.section}.json"
+    label = args.report_label or args.section
+    target = paths.reports_dir(data) / f"pairwise-{label}.json"
     target.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     cleanup_ok = bool(cleanup.get("ok"))
     return 0 if cleanup_ok else 1
+
+
+@beartype
+def _pairwise_names(args: argparse.Namespace, data: Path | None) -> list[str]:
+    """Список задач: явные ``--tasks`` либо секция split (``frozen`` — holdout)."""
+    from db_pipeline.benchmark.graph import split as split_module
+
+    if len(args.tasks) > 0:
+        return _task_names(args.tasks, data)
+    if args.section == "frozen":
+        return split_module.read_holdout()
+    return split_module.derive_split(data)[args.section]
 
 
 @beartype
@@ -562,6 +575,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--section", default="tune", choices=("dev", "tune", "holdout", "frozen")
     )
     pairwise_parser.add_argument("--repeats", type=int, default=2)
+    pairwise_parser.add_argument(
+        "--tasks",
+        nargs="*",
+        default=[],
+        help="явные задачи (sha или func) вместо секции split",
+    )
+    pairwise_parser.add_argument(
+        "--report-label",
+        default="",
+        help="имя файла отчёта (по умолчанию равно секции)",
+    )
     pairwise_parser.add_argument(
         "--no-budget-check",
         action="store_true",

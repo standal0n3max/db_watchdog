@@ -353,9 +353,16 @@ def build_report(
     data: Path | None = None,
     section: str = "holdout",
     repetitions: int = 2,
+    records: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """Собирает итоговый отчёт: пары, McNemar, метрики и страту ``prior_twin``."""
-    records = [record for record in load_records(data) if record.get("mode") in ("bare", "graph")]
+    """Собирает итоговый отчёт: пары, McNemar, метрики и страту ``prior_twin``.
+
+    ``records`` позволяет посчитать отчёт по одному прогону (например, probe) и
+    не смешивать его с уже накопленными записями ``data/runs``. Если список не
+    задан, читаются все сохранённые прогоны.
+    """
+    selected = load_records(data) if records is None else list(records)
+    records = [record for record in selected if record.get("mode") in ("bare", "graph")]
     assign_repetitions(records)
     pairs = build_pairs(records)
     complete = [pair for pair in pairs if pair.bare and pair.graph]
