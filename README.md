@@ -300,7 +300,11 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 ### Граф кода
 
-Свой MCP-сервер с тремя инструментами: `find_code_symbols` (символы C-кода по имени до cutoff), `read_versioned_source` (реальный фрагмент файла на закреплённой ревизии с SHA-256 и byte span), `search_git_history` (сообщения коммитов, hunks и тела кода). Любая возвращаемая revision обязана быть предком `base_sha`; `head_sha` и его потомки не выдаются, нулевой результат пишется в audit log.
+Свой MCP-сервер с двумя слоями инструментов. Слой v1 работает по индексу из 250 последних коммитов: `find_code_symbols` (символы C-кода по имени до cutoff), `read_versioned_source` (реальный фрагмент файла на закреплённой ревизии с SHA-256 и byte span), `search_git_history` (сообщения коммитов, hunks и тела кода). Слой v2 работает по производному `history.sqlite` с полной цепочкой `parents`: `symbol_history` (как менялся один символ), `tests_to_code` (код, менявшийся вместе с тестом), `similar_fixes` (прошлые коммиты со схожим интентом), `find_error_origin` (где печатается строка ошибки). Описания v2 сформулированы по ситуации (когда инструмент нужен и когда его можно пропустить), а не по механике API.
+
+Любая возвращаемая revision обязана быть предком `base_sha`; `head_sha` и его потомки не выдаются, нулевой результат пишется в audit log.
+
+Ручка прогона `graph` подключает оба слоя, `graph_v2` — абляция: три инструмента v1 выключаются картой `tools` в конфиге OpenCode, и у агента остаётся только слой истории. Парный прогон различает руки флагом `--ablation` (сравнение `graph` против `graph_v2` вместо `bare` против `graph`) и вариант абзаца промпта про историю — флагом `--prompt-variant` (`directive` против `situational`): набор инструментов и формулировка промпта меняются независимо, поэтому их эффекты разводятся. Оба параметра пишутся в manifest и в отчёт.
 
 Union-индекс строится по последним 50 предкам каждого из пяти `base_sha`, дельта коммитов дополняется снимком полного source-дерева каждой базы (иначе неизменившийся файл вроде `relnode.c` агенту недоступен). Индекс передаётся в graph-container копией SQLite, полный git-клон в контейнер не монтируется.
 
@@ -308,7 +312,9 @@ Union-индекс строится по последним 50 предкам к
 
 Run records immutable: каждый прогон пишется отдельным файлом в `data/runs/` с session/run ID и не перезаписывает предыдущие. Сводный отчёт `data/reports/smoke-postgres.json` содержит pass@1, gates, test outcomes, latency, tokens, tool counts, MCP calls, effective base/head, ссылки Langfuse и отчёт cleanup. На пяти задачах выводится только работоспособность E2E, не статистическая значимость эффекта графа.
 
-Модуль `benchmark/completion.py` помечает каждый прогон категорией (`ok`, `self_stop_empty`, `infra_fail_truncated`, `infra_fail_wall`, `length`, `step_limit`, `crash_unknown`). В пары McNemar идут только `ok` и `self_stop_empty`: отказы API считаются отдельным счётчиком, иначе измеряется надёжность шлюза, а не эффект графа.
+Модуль `benchmark/completion.py` помечает каждый прогон категорией (`ok`, `self_stop_empty`, `infra_fail_truncated`, `infra_fail_wall`, `length`, `step_limit`, `crash_unknown`). В пары McNemar идут только `ok` и `self_stop_empty`: отказы API считаются отдельным счётчиком, иначе измеряется надёжность шлюза, а не эффект графа. Лимит шагов берётся из manifest прогона, поэтому записи, дошедшие до `agent.build.steps`, классифицируются как `step_limit`, а не как успех.
+
+Отчёт `build_report` содержит основное сравнение `bare` против `graph` и блок `ablation` (`graph` против `graph_v2`): первое отвечает, помогает ли граф, второе — вредит ли слой v1, когда `ripgrep` уже работает. По каждой руке сводятся pass, gates, токены, суммарное и медианное время, доля пустых diff и порядок вызовов MCP относительно первой правки.
 
 Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md), [docs/release.md](docs/release.md), [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
 

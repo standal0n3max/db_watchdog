@@ -191,15 +191,14 @@ def serve() -> None:
 
         @server.tool()
         def symbol_history(path: str, name: str, limit: int = 20) -> dict[str, object]:
-            """Trace how one C symbol changed over time, up to the cutoff.
+            """Reach for this when a function exists but its current shape does not
+            explain the bug: it shows what the function used to do, revision by
+            revision, so a recent behavior change becomes visible.
 
-            Use this to see the commits that touched a function before the
-            current bug was introduced. Call it as ``graph_symbol_history`` with
-            the MCP prefix or ``symbol_history`` without it: the name is plain.
-
-            ``path`` is the file from find_code_symbols and ``name`` is the bare
-            symbol. Each record carries the symbol's own line range (not the
-            hunk's) and whether it is a definition or a prototype.
+            Skip it if you only need the code as it is now or cannot name the
+            function yet. ``path`` is the file, ``name`` is the bare symbol; each
+            record carries the symbol's own line range and whether it is a
+            definition or a prototype. Nothing after the cutoff is returned.
             """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
@@ -209,15 +208,13 @@ def serve() -> None:
 
         @server.tool()
         def tests_to_code(test: str, limit: int = 20) -> dict[str, object]:
-            """Find production code that changed together with a given test.
+            """Reach for this when the task or a failing test names a test file and
+            you need the production code that test actually exercises, without
+            tracing call paths by hand.
 
-            Use this to jump from a regression test named in the task to the
-            source files it exercises. Call it as ``graph_tests_to_code`` with
-            the MCP prefix or ``tests_to_code`` without it: the name is plain.
-
-            ``test`` is a repository-relative test path (``src/test/regress/...``
-            or ``src/test/regress/sql/...``). Results are ranked by co-change
-            weight and limited to ancestors of base_sha.
+            Skip it if the task does not mention a test path. ``test`` is a
+            repository-relative test path; results are ranked by co-change weight
+            and limited to ancestors of base_sha.
             """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
@@ -227,15 +224,13 @@ def serve() -> None:
 
         @server.tool()
         def similar_fixes(query: str, limit: int = 20) -> dict[str, object]:
-            """Find past commits with an intent similar to a natural-language query.
+            """Reach for this when you know the symptom but not the code: it finds
+            past commits whose intent resembles your description, showing how a
+            comparable bug was fixed before.
 
-            Use this to look for how a comparable bug was fixed before, when you
-            know the symptom but not the code. Call it as ``graph_similar_fixes``
-            with the MCP prefix or ``similar_fixes`` without it: the name is
-            plain.
-
-            ``query`` is free text, for example ``fix heap corruption on
-            concurrent insert``. Only ancestors of base_sha are searched.
+            Skip it if you already know the file or symbol to look at. ``query`` is
+            free text, for example ``fix heap corruption on concurrent insert``.
+            Only ancestors of base_sha are searched.
             """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
@@ -245,16 +240,14 @@ def serve() -> None:
 
         @server.tool()
         def find_error_origin(message: str, limit: int = 20) -> dict[str, object]:
-            """Locate the C source that prints a given PostgreSQL error message.
+            """Reach for this when an error string is all you have: it points at the
+            ``ereport``/``errmsg`` site that prints that message, turning log text
+            into a file and line.
 
-            Use this when the task or a failing test shows an error string and
-            you need the ``ereport``/``errmsg`` site that emits it. Call it as
-            ``graph_find_error_origin`` with the MCP prefix or
-            ``find_error_origin`` without it: the name is plain.
-
-            ``message`` is the literal text, for example ``cache lookup
-            failed``. Placeholders such as ``%s`` are normalized before
-            matching. Results are limited to ancestors of base_sha.
+            Skip it if the task mentions no error text. ``message`` is the literal
+            string, for example ``cache lookup failed``; placeholders such as
+            ``%s`` are normalized before matching. Results are limited to ancestors
+            of base_sha.
             """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:

@@ -34,7 +34,11 @@ from db_pipeline.benchmark import budget, container, convert, paths, security
 from db_pipeline.benchmark import telemetry
 from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
 from db_pipeline.benchmark.eval import COMPARISON_LEFT, COMPARISON_RIGHT
-from db_pipeline.benchmark.runner import GRAPH_MODES
+from db_pipeline.benchmark.runner import (
+    GRAPH_MODES,
+    PROMPT_DEFAULT,
+    PROMPT_VARIANTS,
+)
 from db_pipeline.environment import load_environment
 from db_pipeline.errors import PipelineError
 
@@ -171,7 +175,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     data = None if args.data is None else Path(args.data)
     name = _task_names([args.name], data)[0]
-    record = runner.run_one(name, mode=args.mode, data=data, keep_container=args.keep)
+    record = runner.run_one(
+        name,
+        mode=args.mode,
+        data=data,
+        keep_container=args.keep,
+        prompt_variant=args.prompt_variant,
+    )
     print(json.dumps(record, ensure_ascii=False, indent=2))
     return 0 if record.get("pass") else 1
 
@@ -228,6 +238,7 @@ def _smoke_run(
     mode: str,
     data: Path | None,
     active: object,
+    prompt_variant: str = PROMPT_DEFAULT,
 ) -> dict[str, object]:
     from db_pipeline.benchmark import runner
     from db_pipeline.benchmark import session as smoke_session
@@ -235,7 +246,9 @@ def _smoke_run(
 
     session = cast("smoke_session.SmokeSession", active)
     try:
-        return runner.run_one(name, mode=mode, data=data, smoke=session)
+        return runner.run_one(
+            name, mode=mode, data=data, smoke=session, prompt_variant=prompt_variant
+        )
     except Exception as exc:  # noqa: BLE001 - единичная ошибка не останавливает пары
         return {
             "func": name,
@@ -422,7 +435,9 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
             for repetition in range(args.repeats):
                 order = _hand_order(index, repetition, hands)
                 for mode in order:
-                    records.append(_smoke_run(name, mode, data, session))
+                    records.append(
+                        _smoke_run(name, mode, data, session, args.prompt_variant)
+                    )
     finally:
         cleanup = smoke_session.close_session(session)
     # Отчёт считается по записям этого прогона, а не по всему ``data/runs``:
@@ -438,6 +453,7 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
     report["tasks"] = names
     report["hands"] = list(hands)
     report["ablation_run"] = args.ablation
+    report["prompt_variant"] = args.prompt_variant
     report["budget"] = guard
     report["cleanup"] = cleanup
     label = args.report_label or args.section
@@ -573,6 +589,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--mode", choices=("bare", *GRAPH_MODES), default="bare"
     )
+    run_parser.add_argument(
+        "--prompt-variant",
+        choices=PROMPT_VARIANTS,
+        default=PROMPT_DEFAULT,
+        help="формулировка абзаца об инструментах: directive или situational",
+    )
     run_parser.add_argument("--keep", action="store_true", help="не удалять контейнер")
     run_parser.set_defaults(handler=cmd_run)
 
@@ -657,6 +679,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--ablation",
         action="store_true",
         help="сравнивать graph против graph_v2 (отключены инструменты v1) вместо bare против graph",
+    )
+    pairwise_parser.add_argument(
+        "--prompt-variant",
+        choices=PROMPT_VARIANTS,
+        default=PROMPT_DEFAULT,
+        help="формулировка абзаца об инструментах: directive (механика API) или situational (интент)",
     )
     pairwise_parser.set_defaults(handler=cmd_pairwise)
 

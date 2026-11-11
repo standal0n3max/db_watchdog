@@ -52,6 +52,18 @@ MODES = ("bare", "graph", "graph_v2")
 # включённых инструментов (только слой истории v2).
 GRAPH_MODES = ("graph", "graph_v2")
 
+# Варианты абзаца промпта про историю. ``directive`` — прежняя форма
+# («Before editing, use the MCP tools»); ``situational`` — мягкая: правку можно
+# начинать, как только причина локализована. Вариант пишется в manifest, чтобы
+# правки промпта и набора инструментов не смешивались вслепую.
+PROMPT_DIRECTIVE = "directive"
+PROMPT_SITUATIONAL = "situational"
+PROMPT_VARIANTS = (PROMPT_DIRECTIVE, PROMPT_SITUATIONAL)
+
+# Вариант по умолчанию: смягчённая формулировка слоя 3.2. Директивная форма
+# остаётся доступной флагом ``--prompt-variant directive`` для сравнения.
+PROMPT_DEFAULT = PROMPT_SITUATIONAL
+
 
 @beartype
 def run_one(
@@ -61,9 +73,12 @@ def run_one(
     data: Path | None = None,
     keep_container: bool = False,
     smoke: smoke_session.SmokeSession | None = None,
+    prompt_variant: str = PROMPT_DEFAULT,
 ) -> dict[str, object]:
     if mode not in MODES:
         raise PipelineError("run", f"режим {mode} неизвестен")
+    if prompt_variant not in PROMPT_VARIANTS:
+        raise PipelineError("run", f"вариант промпта {prompt_variant} неизвестен")
     cfg = config or load_config()
     public = convert.load_public(name, data)
     oracle = convert.load_oracle(name, data)
@@ -80,6 +95,7 @@ def run_one(
         "manifest": cfg.to_manifest(),
         "oracle": {"head": oracle["head"], "base": oracle["base"]},
         "effective": {"base": oracle["base"], "head": oracle["head"]},
+        "prompt_variant": prompt_variant,
     }
 
     owns_session = smoke is None
@@ -93,7 +109,7 @@ def run_one(
             )
             record["graph"] = graph_id
         _run_in_container(active, name, mode, cfg, public, oracle, data, record, phases, transcript,
-                          keep_container, hidden)
+                          keep_container, hidden, prompt_variant)
         if graph_id != "":
             record["cutoff"] = _verify_cutoff(graph_id, oracle, active.context)
     finally:
@@ -132,6 +148,7 @@ def _run_in_container(
     transcript: opencode.AgentTranscript,
     keep_container: bool,
     hidden: list[str],
+    prompt_variant: str,
 ) -> None:
     context = active.context
     spec = container.ContainerSpec(
@@ -163,7 +180,7 @@ def _run_in_container(
         hidden.extend(hidden_list)
         _phase(phases, "hide", CheckOutcome(ok=True, total=len(hidden)))
 
-        prompt = _prompt(public, mode)
+        prompt = _prompt(public, mode, prompt_variant)
         _phase(
             phases,
             "agent",
@@ -398,28 +415,49 @@ def _recreated(container_id: str, protected: list[str]) -> list[str]:
 
 
 @beartype
-def _prompt(public: dict[str, object], mode: str) -> str:
+def _prompt(public: dict[str, object], mode: str, variant: str = PROMPT_DIRECTIVE) -> str:
     """Строит промпт: системные правила, плюс абзац про историю для graph-рук.
 
     Абзац зависит от руки: ``graph_v2`` не упоминает выключенные v1-инструменты,
-    иначе агент звал бы недоступные инструменты.
+    иначе агент звал бы недоступные инструменты. Вариант ``variant`` меняет
+    только рамку абзаца (директива против «по ситуации»), а состав инструментов
+    остаётся привязан к руке — поэтому эффект промпта и эффект набора
+    инструментов разводятся и не смешиваются в одном прогоне.
     """
     from db_pipeline.benchmark import tasks as task_rules
 
     text = task_rules.build_prompt(public)
     if mode not in GRAPH_MODES:
         return text
-    return text + _history_paragraph(mode)
+    return text + _history_paragraph(mode, variant)
 
 
 @beartype
-def _history_paragraph(mode: str) -> str:
-    """Абзац про MCP-историю для конкретного набора инструментов руки."""
-    opening = (
-        "\n\nBefore editing, use the MCP tools to locate the relevant code "
-        "and its history: "
-    )
-    closing = " Any revision the tools return is at or before the cutoff commit."
+def _history_paragraph(mode: str, variant: str) -> str:
+    """Абзац про MCP-историю: по ситуации, для конкретного набора инструментов.
+
+    ``directive`` повторяет прежнюю форму («Before editing, use the MCP tools»),
+    ``situational`` мягче: правку можно начинать, как только причина
+    локализована, а к инструментам возвращаться по необходимости.
+    """
+    if variant == PROMPT_SITUATIONAL:
+        opening = (
+            "\n\nHistory tools are available when you need them, and can save "
+            "guessing: "
+        )
+        closing = (
+            " Start editing as soon as you have localized the cause, and come "
+            "back to the tools if you need more history. Any revision the tools "
+            "return is at or before the cutoff commit."
+        )
+    else:
+        opening = (
+            "\n\nBefore editing, use the MCP tools to locate the relevant code "
+            "and its history: "
+        )
+        closing = (
+            " Any revision the tools return is at or before the cutoff commit."
+        )
     if mode == "graph_v2":
         return opening + _V2_TOOL_INTENT + closing
     return opening + _V1_TOOL_INTENT + " " + _V2_TOOL_INTENT + closing
