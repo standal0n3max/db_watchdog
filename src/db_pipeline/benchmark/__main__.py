@@ -328,6 +328,120 @@ def cmd_graph_split(args: argparse.Namespace) -> int:
 
 
 @beartype
+def cmd_graph_leak_audit(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import leakguard
+
+    data = None if args.data is None else Path(args.data)
+    report = leakguard.audit_split(
+        data, args.section, progress_path=leakguard.progress_file(data, args.section)
+    )
+    target = paths.reports_dir(data) / f"leak-audit-{args.section}.json"
+    target.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report.get("ok") else 1
+
+
+@beartype
+def cmd_graph_history(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import history
+
+    data = None if args.data is None else Path(args.data)
+    report = history.build(
+        data=data,
+        rebuild=not args.no_rebuild,
+        index_errors=not args.no_errors,
+        base_shas=args.bases,
+    )
+    print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    return 0
+
+
+@beartype
+def cmd_graph_canary(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import canary, split as split_module
+
+    data = None if args.data is None else Path(args.data)
+    names = _task_names(args.tasks, data)
+    if len(args.tasks) == 0:
+        names = split_module.derive_split(data)["dev"]
+    layer = args.layer
+    reports = [
+        canary.run_task(name, data, with_history=layer in ("auto", "v2"))
+        for name in names
+    ]
+    target = paths.reports_dir(data) / "graph-canary.json"
+    target.write_text(json.dumps(reports, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(reports, ensure_ascii=False, indent=2))
+    return 0 if all(bool(report["ok"]) for report in reports) else 1
+
+
+@beartype
+def cmd_pairwise(args: argparse.Namespace) -> int:
+    """Парный прогон ``bare`` vs ``graph`` по секции split с counterbalanced порядком.
+
+    Порядок рук чередуется по задачам (``bare`` первым на чётных, ``graph`` — на
+    нечётных) и по повторам, чтобы дрейф модели и кэш не благоприятствовали одной
+    руке. Ошибка одной пары не останавливает остальные: запись об ошибке всё
+    равно попадает в отчёт.
+    """
+    from db_pipeline.benchmark import eval as eval_module
+    from db_pipeline.benchmark import session as smoke_session
+    from db_pipeline.benchmark.graph import split as split_module
+
+    data = None if args.data is None else Path(args.data)
+    active_split = split_module.derive_split(data)
+    if args.section == "frozen":
+        names = split_module.read_holdout()
+    else:
+        names = active_split[args.section]
+    if len(names) == 0:
+        print(json.dumps({"error": f"секция {args.section} пуста"}, ensure_ascii=False))
+        return 2
+    cfg = load_config()
+    session = smoke_session.open_session(cfg, data)
+    records: list[dict[str, object]] = []
+    try:
+        for index, name in enumerate(names):
+            for repetition in range(args.repeats):
+                order = _hand_order(index, repetition)
+                for mode in order:
+                    records.append(_smoke_run(name, mode, data, session))
+    finally:
+        cleanup = smoke_session.close_session(session)
+    report = eval_module.build_report(data, args.section)
+    report["section"] = args.section
+    report["cleanup"] = cleanup
+    target = paths.reports_dir(data) / f"pairwise-{args.section}.json"
+    target.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    cleanup_ok = bool(cleanup.get("ok"))
+    return 0 if cleanup_ok else 1
+
+
+@beartype
+def _hand_order(task_index: int, repetition: int) -> tuple[str, str]:
+    """Чередование рук: чётная пара даёт ``bare`` первым, нечётная — ``graph``."""
+    first = (task_index + repetition) % 2
+    return ("bare", "graph") if first == 0 else ("graph", "bare")
+
+
+@beartype
+def cmd_eval(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark import eval as eval_module
+
+    data = None if args.data is None else Path(args.data)
+    report = eval_module.build_report(data, args.section)
+    target = eval_module.write_report(data, args.section)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(f"\nотчёт: {target}")
+    return 0
+
+
+@beartype
 def _smoke_bases(data: Path | None) -> list[str]:
     bases: list[str] = []
     for name in (f"postgres__{item}" for item in SMOKE_TASKS):
@@ -396,6 +510,50 @@ def build_parser() -> argparse.ArgumentParser:
         "--freeze", action="store_true", help="записать holdout в constraints/"
     )
     split_parser.set_defaults(handler=cmd_graph_split)
+
+    leak_parser = sub.add_parser(
+        "graph-leak-audit", help="leak-guard: membership, prior-twin, канарейки"
+    )
+    leak_parser.add_argument(
+        "--section", default="holdout", choices=("dev", "tune", "holdout")
+    )
+    leak_parser.set_defaults(handler=cmd_graph_leak_audit)
+
+    history_parser = sub.add_parser(
+        "graph-history", help="собрать производный history.sqlite из данных PRISM"
+    )
+    history_parser.add_argument(
+        "--no-rebuild", action="store_true", help="докидывать записи, не очищая таблицы"
+    )
+    history_parser.add_argument(
+        "--no-errors", action="store_true", help="не индексировать шаблоны errmsg"
+    )
+    history_parser.add_argument("--bases", nargs="*", default=None, help="base_sha для errmsg")
+    history_parser.set_defaults(handler=cmd_graph_history)
+
+    canary_parser = sub.add_parser(
+        "graph-canary", help="прогон канареек и membership по инструментам графа"
+    )
+    canary_parser.add_argument(
+        "--layer", default="auto", choices=("auto", "v1", "v2"), help="слой инструментов"
+    )
+    canary_parser.add_argument("tasks", nargs="*", help="имена задач (по умолчанию dev)")
+    canary_parser.set_defaults(handler=cmd_graph_canary)
+
+    pairwise_parser = sub.add_parser(
+        "pairwise", help="парный прогон bare vs graph по секции split"
+    )
+    pairwise_parser.add_argument(
+        "--section", default="tune", choices=("dev", "tune", "holdout", "frozen")
+    )
+    pairwise_parser.add_argument("--repeats", type=int, default=2)
+    pairwise_parser.set_defaults(handler=cmd_pairwise)
+
+    eval_parser = sub.add_parser("eval", help="отчёт McNemar по сохранённым прогонам")
+    eval_parser.add_argument(
+        "--section", default="holdout", choices=("dev", "tune", "holdout", "frozen")
+    )
+    eval_parser.set_defaults(handler=cmd_eval)
 
     return parser
 
