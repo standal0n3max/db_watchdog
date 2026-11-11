@@ -107,9 +107,16 @@ def assign_repetitions(records: list[dict[str, object]]) -> None:
 
 @beartype
 def build_pairs(records: list[dict[str, object]]) -> list[PairOutcome]:
-    """Собирает пары ``bare``/``graph`` по ``(задача, повтор)``."""
+    """Собирает пары ``bare``/``graph`` по ``(задача, повтор)``.
+
+    В пары попадают только пригодные прогоны (``ok`` и ``self_stop_empty``):
+    API-отказы и срабатывания лимитов исключаются, иначе McNemar измеряет
+    надёжность шлюза, а не качество графа. Исключённые учитываются отдельно.
+    """
     buckets: dict[tuple[str, int], PairOutcome] = {}
     for record in records:
+        if not completion.countable(record):
+            continue
         repetition = int(cast("int", record.get("repetition", 0)))
         key = (str(record["func"]), repetition)
         pair = buckets.setdefault(key, PairOutcome(task=key[0], repetition=key[1]))
@@ -358,9 +365,20 @@ def build_report(
     twin_pairs = [pair for pair in complete if pair.task in twins]
     covered = [pair for pair in complete if pair.task not in missing_prism]
     covered_normal = [pair for pair in covered if pair.task not in twins]
-    bare_records = [record for record in records if record.get("mode") == "bare"]
-    graph_records = [record for record in records if record.get("mode") == "graph"]
+    # Метрики рук считаются только по пригодным прогонам: иначе pass_rate
+    # разбавлен отказами API, которые к агенту отношения не имеют.
+    bare_records = [
+        record
+        for record in records
+        if record.get("mode") == "bare" and completion.countable(record)
+    ]
+    graph_records = [
+        record
+        for record in records
+        if record.get("mode") == "graph" and completion.countable(record)
+    ]
     repeat_counts = sorted({pair.repetition for pair in complete})
+    excluded = [record for record in records if not completion.countable(record)]
     return {
         "pairs": len(complete),
         "incomplete_pairs": len(pairs) - len(complete),
@@ -368,6 +386,7 @@ def build_report(
         "repetitions_requested": repetitions,
         "repetitions_ok": len(repeat_counts) >= min(repetitions, max(1, len(complete))),
         "runs_total": len(records),
+        "runs_excluded": len(excluded),
         "completion": completion.summarize(records),
         "mcnemar_pair_level": mcnemar(complete).to_dict(),
         "mcnemar_task_level": mcnemar(complete, task_level=True).to_dict(),

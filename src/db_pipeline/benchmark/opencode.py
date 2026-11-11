@@ -19,6 +19,11 @@ from beartype import beartype
 
 from db_pipeline.errors import PipelineError
 
+# Потолок ответа модели. 4096 не влезал в остаток кредитов ключа OpenRouter и
+# приводил к отказу с первой секунды (``reason`` = ``length``/402): генерации не
+# было вовсе. 2048 проходит, а один ретрай на ``length`` добирает обрезанное.
+DEFAULT_MAX_TOKENS = 2048
+
 # Реальный лимит шагов агента: попадает в ``agent.build.steps`` эффективного
 # конфига. ``opencode run`` собственного флага лимита не имеет.
 DEFAULT_STEP_LIMIT = 80
@@ -33,7 +38,7 @@ class AgentConfig:
     model: str = ""
     temperature: float = 0.0
     context_length: int = 32768
-    max_tokens: int = 4096
+    max_tokens: int = DEFAULT_MAX_TOKENS
     step_limit: int = DEFAULT_STEP_LIMIT
     timeout: int = 1800
 
@@ -236,7 +241,7 @@ def build_config(
     provider: str,
     model: str,
     context_length: int = 32768,
-    max_tokens: int = 4096,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     step_limit: int = DEFAULT_STEP_LIMIT,
 ) -> dict[str, object]:
     """Строит эффективный OpenCode-конфиг: bare без MCP, graph с remote MCP.

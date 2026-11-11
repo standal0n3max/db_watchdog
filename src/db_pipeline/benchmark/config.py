@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from beartype import beartype
 
-from db_pipeline.benchmark.opencode import DEFAULT_STEP_LIMIT
+from db_pipeline.benchmark.opencode import DEFAULT_MAX_TOKENS, DEFAULT_STEP_LIMIT
 from db_pipeline.benchmark.telemetry import OtelConfig
 
 
@@ -34,6 +34,7 @@ class BenchmarkConfig:
     model: str
     provider: str
     step_limit: int
+    max_tokens: int
     temperature: float
     agent_timeout: int
     container_timeout: int
@@ -58,6 +59,7 @@ class BenchmarkConfig:
             "model": self.model,
             "provider": self.provider,
             "step_limit": self.step_limit,
+            "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "agent_timeout": self.agent_timeout,
             "opencode_version": self.opencode_version,
@@ -80,6 +82,7 @@ def load_config() -> BenchmarkConfig:
         model=_env("BENCH_MODEL", "deepseek/deepseek-v4-flash"),
         provider=_env("BENCH_PROVIDER", "pgpro"),
         step_limit=int(_env("BENCH_STEP_LIMIT", str(DEFAULT_STEP_LIMIT))),
+        max_tokens=int(_env("BENCH_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         temperature=float(_env("BENCH_TEMPERATURE", "0")),
         agent_timeout=int(_env("BENCH_AGENT_TIMEOUT", "1800")),
         container_timeout=int(_env("BENCH_CONTAINER_TIMEOUT", "3600")),

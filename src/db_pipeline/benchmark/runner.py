@@ -286,7 +286,7 @@ def _harness_env(cfg: BenchmarkConfig) -> str:
             "step_limit": cfg.step_limit,
             "temperature": cfg.temperature,
             "context_length": 32768,
-            "max_tokens": 4096,
+            "max_tokens": cfg.max_tokens,
         }
     )
 
@@ -426,6 +426,7 @@ def _run_agent(
         provider=cfg.provider,
         model=cfg.model,
         context_length=32768,
+        max_tokens=cfg.max_tokens,
         step_limit=cfg.step_limit,
     )
     config_text = opencode.config_text(config)
@@ -440,6 +441,7 @@ def _run_agent(
         provider=cfg.provider,
         model=cfg.model,
         temperature=cfg.temperature,
+        max_tokens=cfg.max_tokens,
         step_limit=cfg.step_limit,
         timeout=cfg.agent_timeout,
     )
@@ -449,13 +451,55 @@ def _run_agent(
         container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
     )
     parsed = opencode.parse_jsonl(output)
+    retries = 0
+    # Один ретрай, если прогон оборвал потолок ответа (``reason=length``): ответ
+    # обрезан и отброшен, но шаги уже потрачены. Перед повтором дерево
+    # возвращается к baseline, иначе обрезанная попытка наслаивается на повтор.
+    while retries < LENGTH_RETRY_LIMIT and _truncated_by_length(parsed):
+        retries += 1
+        _reset_worktree(container_id)
+        code, output = postgres.run_in_container(
+            container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
+        )
+        parsed = opencode.parse_jsonl(output)
     transcript.generations = parsed.generations
     transcript.tools = parsed.tools
     transcript.errors = parsed.errors
     transcript.raw_events = parsed.raw_events
     record["agent_returncode"] = code
+    record["agent_length_retries"] = retries
     record["agent_jsonl"] = output
     return CheckOutcome(ok=code == 0, tail=output[-2000:] if code != 0 else "")
+
+
+LENGTH_RETRY_LIMIT = 1
+
+# Откат правок обрезанной попытки: сохраняются только сборочные артефакты.
+RESET_WORKTREE_COMMAND = "git checkout -- . && git clean -fd -e build"
+
+
+@beartype
+def _reset_worktree(container_id: str) -> None:
+    """Возвращает рабочее дерево к baseline перед повтором на ``length``."""
+    postgres.run_in_container(
+        container_id,
+        RESET_WORKTREE_COMMAND,
+        timeout=300,
+        user=postgres.BENCH_USER,
+    )
+
+
+@beartype
+def _truncated_by_length(parsed: opencode.AgentTranscript) -> bool:
+    """Прогон оборван потолком ответа: последняя генерация с ``reason=length``.
+
+    MCP и размер ответов инструментов тут ни при чём: ``length`` приходит от
+    провайдера как причина последней генерации.
+    """
+    if len(parsed.generations) == 0:
+        return False
+    last = parsed.generations[-1]
+    return last.reason == "length" and last.output_tokens == 0
 
 
 @beartype

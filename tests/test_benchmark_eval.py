@@ -255,6 +255,23 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(target.is_file())
         self.assertEqual(target.name, "pairwise-tune.json")
 
+    def test_infra_failures_are_excluded_from_pairs(self) -> None:
+        """Отказ API не идёт в пары: иначе McNemar измеряет надёжность шлюза."""
+        good = _record("postgres__a", "bare", True, "2026-01-01T00:00:00+00:00")
+        failed = _record("postgres__a", "graph", False, "2026-01-01T00:10:00+00:00")
+        failed["generations"] = []
+        failed["agent_jsonl"] = '{"error":"in_flight_budget_exhausted"}'
+        self._write(good)
+        self._write(failed)
+        report = eval_module.build_report(self.data)
+        self.assertEqual(report["pairs"], 0)
+        self.assertEqual(report["runs_excluded"], 1)
+        completion_counts = report["completion"]
+        self.assertIsInstance(completion_counts, dict)
+        counted = cast("dict[str, int]", completion_counts)
+        self.assertEqual(counted["infra_fail_truncated"], 1)
+        self.assertEqual(counted["crash_unknown"], 0)
+
     def test_completion_counts_present_even_when_empty(self) -> None:
         self._write(_record("postgres__a", "bare", True, "2026-01-01T00:00:00+00:00"))
         report = eval_module.build_report(self.data)

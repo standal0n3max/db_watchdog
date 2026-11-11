@@ -52,6 +52,14 @@ class OpenCodeConfigTests(unittest.TestCase):
         build = cast("dict[str, object]", cast("dict[str, object]", agent)["build"])
         self.assertEqual(build["steps"], 80)
 
+    def test_default_max_tokens_is_2048(self) -> None:
+        self.assertEqual(opencode.DEFAULT_MAX_TOKENS, 2048)
+        config = opencode.build_config("bare", "pgpro", "bench")
+        provider = cast("dict[str, object]", config["provider"])
+        models = cast("dict[str, object]", cast("dict[str, object]", provider["pgpro"])["models"])
+        limit = cast("dict[str, object]", cast("dict[str, object]", models["bench"])["limit"])
+        self.assertEqual(limit["output"], 2048)
+
 
 class RunCommandTests(unittest.TestCase):
     def test_no_unsupported_standalone_flag(self) -> None:
