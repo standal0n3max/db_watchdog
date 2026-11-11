@@ -170,6 +170,7 @@ def inspect_running_user(container_id: str, context: str = "") -> str:
     script = "id -u"
     result = subprocess.run(
         docker_command("exec", "-i", container_id, "sh", "-c", script, context=context),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,
@@ -273,6 +274,7 @@ def wait_ready(container_id: str, marker: str, timeout: int = 600, context: str 
             docker_command(
                 "exec", "-i", container_id, "sh", "-lc", f"test -f {marker}", context=context
             ),
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=False,

@@ -217,6 +217,7 @@ def _exec(container_id: str, script: str, context: str) -> tuple[int, str]:
         container.docker_command(
             "exec", "-i", container_id, "sh", "-lc", script, context=context
         ),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         check=False,

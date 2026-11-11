@@ -50,8 +50,14 @@ def run_in_container(
     if user != "":
         command += ["-u", user]
     command += [container_id, "sh", "-lc", wrapped]
+    # ``stdin=DEVNULL`` обязателен: без него ``docker exec -i`` наследует
+    # stdin родителя. Если родитель запущен под pty или незакрытым pipe,
+    # stdin не даёт EOF, и ``opencode run`` (кормится промптом из stdin,
+    # когда аргумент-промпт не распознан) зависает навсегда — прогон
+    # заканчивается ``crash_unknown`` по таймауту вместо ответа модели.
     result = subprocess.run(
         command,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         timeout=timeout,
