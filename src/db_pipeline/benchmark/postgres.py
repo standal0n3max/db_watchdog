@@ -224,7 +224,7 @@ def check(container_id: str, tests: list[str] | None = None, timeout: int = 1800
     # создаёт общие таблицы в ``test_setup``, поэтому одиночный тест без него
     # падает с «relation does not exist» и до эталона, и после.
     if tests:
-        selected = _with_setup(tests)
+        selected = with_setup(tests)
         command = f'cd src/test/regress && make check-tests TESTS="{" ".join(selected)}"'
     else:
         command = "cd src/test/regress && make check"
@@ -232,7 +232,7 @@ def check(container_id: str, tests: list[str] | None = None, timeout: int = 1800
 
 
 @beartype
-def _with_setup(tests: list[str]) -> list[str]:
+def with_setup(tests: list[str]) -> list[str]:
     if "test_setup" in tests:
         return tests
     return ["test_setup", *tests]

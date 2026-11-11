@@ -26,6 +26,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from beartype import beartype
 
@@ -559,7 +560,11 @@ def main(argv: list[str]) -> int:
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\nотчёт записан: {target}", file=sys.stderr)
     archive = report.get("archive")
-    missing = archive.get("missing", []) if isinstance(archive, dict) else []
+    missing: list[object] = []
+    if isinstance(archive, dict):
+        raw_missing = cast("dict[str, object]", archive).get("missing", [])
+        if isinstance(raw_missing, list):
+            missing = list(cast("list[object]", raw_missing))
     return 0 if len(missing) == 0 else 1
 
 

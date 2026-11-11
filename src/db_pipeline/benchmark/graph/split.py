@@ -22,6 +22,7 @@ import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from beartype import beartype
 
@@ -93,14 +94,15 @@ def _load(data: Path | None) -> list[SplitTask]:
     found: list[SplitTask] = []
     for path in sorted(paths.tasks_dir(data).glob("*.json")):
         name = path.stem
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        area = str(raw.get("area", "")).split(",")[0].strip() if isinstance(raw, dict) else ""
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
+        task_map = cast("dict[str, object]", raw) if isinstance(raw, dict) else {}
+        area = str(task_map.get("area", "")).split(",")[0].strip()
         oracle_path = paths.oracle_dir(data) / f"{name}.json"
         base_sha = ""
         if oracle_path.is_file():
-            oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+            oracle: object = json.loads(oracle_path.read_text(encoding="utf-8"))
             if isinstance(oracle, dict):
-                base_sha = str(oracle.get("base", ""))
+                base_sha = str(cast("dict[str, object]", oracle).get("base", ""))
         base_date = corpus_dates.get(base_sha, "")
         if base_date == "" and base_sha != "" and (repo / ".git").exists():
             base_date = _git_date(repo, base_sha)
