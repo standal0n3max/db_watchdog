@@ -511,6 +511,25 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 @beartype
+def cmd_causes(args: argparse.Namespace) -> int:
+    """Пер-прогонный агрегатор причин: ``runs`` + ``oracle`` → ``cause``."""
+    from db_pipeline.benchmark import causes
+
+    data = None if args.data is None else Path(args.data)
+    modes = tuple(args.mode) if len(args.mode) > 0 else ()
+    report = causes.build_cause_report(
+        data, modes=modes, prompt_variant=args.prompt_variant
+    )
+    target = paths.reports_dir(data) / f"{args.report_label}.json"
+    target.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
+    print(f"\nотчёт: {target}")
+    return 0
+
+
+@beartype
 def cmd_release(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark import release as release_module
 
@@ -693,6 +712,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--section", default="holdout", choices=("dev", "tune", "holdout", "frozen")
     )
     eval_parser.set_defaults(handler=cmd_eval)
+
+    causes_parser = sub.add_parser(
+        "causes", help="пер-прогонный агрегатор причин: runs + oracle → cause"
+    )
+    causes_parser.add_argument(
+        "--mode",
+        nargs="*",
+        default=[],
+        help="сузить руки (bare, graph, graph_v2); пусто — все",
+    )
+    causes_parser.add_argument(
+        "--prompt-variant",
+        default="",
+        help="сузить вариант промпта (directive/situational); пусто — все",
+    )
+    causes_parser.add_argument(
+        "--report-label",
+        default="causes",
+        help="имя файла отчёта (по умолчанию causes)",
+    )
+    causes_parser.set_defaults(handler=cmd_causes)
 
     release_parser = sub.add_parser(
         "release", help="публичная выгрузка задач: стабильные id, лицензии, sha256-манифест"
