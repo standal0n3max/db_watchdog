@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import cast
 
 from db_pipeline.benchmark import eval as eval_module
+from db_pipeline.benchmark import completion
 
 
 def _record(
@@ -283,6 +284,79 @@ class ReportTests(unittest.TestCase):
         (self.data / "runs" / "broken.json").write_text("{not json", encoding="utf-8")
         self._write(_record("postgres__a", "bare", True, "2026-01-01T00:00:00+00:00"))
         self.assertEqual(len(eval_module.load_records(self.data)), 1)
+
+
+class StepLimitTests(unittest.TestCase):
+    def test_record_step_limit_reads_manifest(self) -> None:
+        record = _record("a", "bare", True, "2026-01-01")
+        record["manifest"] = {"step_limit": 80}
+        self.assertEqual(eval_module.record_step_limit(record), 80)
+
+    def test_record_step_limit_defaults_to_zero(self) -> None:
+        self.assertEqual(eval_module.record_step_limit(_record("a", "bare", True, "2026-01-01")), 0)
+
+    def test_run_at_step_limit_is_excluded_from_pairs(self) -> None:
+        """Прогон, дошедший до ``agent.build.steps``, не идёт в пары."""
+        record = _record("postgres__a", "bare", False, "2026-01-01T00:00:00+00:00")
+        record["manifest"] = {"step_limit": 2}
+        record["generations"] = [
+            {"reason": "tool-calls", "output_tokens": 10},
+            {"reason": "tool-calls", "output_tokens": 10},
+        ]
+        step_limit = eval_module.record_step_limit(record)
+        self.assertFalse(completion.countable(record, step_limit))
+
+
+class AblationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(prefix="ablation-")
+        self.data = Path(self.tmp.name)
+        (self.data / "runs").mkdir(parents=True)
+        (self.data / "reports").mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _write(self, record: dict[str, object]) -> None:
+        name = f"{record['func']}__{record['mode']}__{record['started']}.json"
+        (self.data / "runs" / name).write_text(
+            json.dumps(record, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def test_ablation_compares_graph_against_graph_v2(self) -> None:
+        for day in ("01", "02"):
+            self._write(_record("postgres__a", "graph", True, f"2026-01-{day}T00:00:00+00:00"))
+            self._write(_record("postgres__a", "graph_v2", True, f"2026-01-{day}T00:10:00+00:00"))
+        report = eval_module.build_report(self.data)
+        ablation = cast("dict[str, object]", report["ablation"])
+        self.assertEqual(ablation["left"], "graph")
+        self.assertEqual(ablation["right"], "graph_v2")
+        self.assertEqual(ablation["pairs"], 2)
+
+    def test_bare_vs_graph_pairs_unaffected_by_graph_v2(self) -> None:
+        """Абляционная рука не попадает в основное сравнение ``bare`` vs ``graph``."""
+        for mode in ("bare", "graph"):
+            self._write(_record("postgres__a", mode, True, "2026-01-01T00:00:00+00:00"))
+        self._write(_record("postgres__a", "graph_v2", False, "2026-01-01T00:10:00+00:00"))
+        report = eval_module.build_report(self.data)
+        self.assertEqual(report["pairs"], 1)
+        graph_v2 = cast("dict[str, object]", report["graph_v2"])
+        self.assertEqual(graph_v2["runs"], 1)
+
+    def test_ablation_hand_mismatch_is_incomplete(self) -> None:
+        self._write(_record("postgres__a", "graph", True, "2026-01-01T00:00:00+00:00"))
+        report = eval_module.build_report(self.data)
+        ablation = cast("dict[str, object]", report["ablation"])
+        self.assertEqual(ablation["pairs"], 0)
+        self.assertEqual(ablation["incomplete_pairs"], 1)
+
+    def test_empty_diff_and_seconds_are_counted(self) -> None:
+        record = _record("a", "bare", False, "2026-01-01")
+        record["diff_empty"] = True
+        record["seconds"] = 120
+        summary = eval_module.aggregate([record])
+        self.assertEqual(summary["empty_diff"], 1)
+        self.assertEqual(summary["seconds_median"], 120.0)
 
 
 if __name__ == "__main__":

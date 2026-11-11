@@ -52,6 +52,25 @@ class OpenCodeConfigTests(unittest.TestCase):
         build = cast("dict[str, object]", cast("dict[str, object]", agent)["build"])
         self.assertEqual(build["steps"], 80)
 
+    def test_graph_v2_disables_v1_tools_only(self) -> None:
+        config = opencode.build_config("graph_v2", "pgpro", "bench")
+        self.assertIn("mcp", config)
+        tools = cast("dict[str, object]", config["tools"])
+        for name in opencode.V1_MCP_TOOLS:
+            self.assertIs(tools.get(name), False)
+        self.assertIs(tools.get("webfetch"), False)
+
+    def test_graph_keeps_v1_tools_enabled(self) -> None:
+        config = opencode.build_config("graph", "pgpro", "bench")
+        tools = cast("dict[str, object]", config["tools"])
+        for name in opencode.V1_MCP_TOOLS:
+            self.assertNotIn(name, tools)
+
+    def test_graph_v2_config_differs_from_graph(self) -> None:
+        graph = opencode.build_config("graph", "pgpro", "bench")
+        ablation = opencode.build_config("graph_v2", "pgpro", "bench")
+        self.assertNotEqual(opencode.config_sha256(graph), opencode.config_sha256(ablation))
+
     def test_default_max_tokens_is_2048(self) -> None:
         self.assertEqual(opencode.DEFAULT_MAX_TOKENS, 2048)
         config = opencode.build_config("bare", "pgpro", "bench")

@@ -45,7 +45,12 @@ from db_pipeline.benchmark.config import BenchmarkConfig, load_config
 from db_pipeline.benchmark.models import CheckOutcome, as_str_list
 from db_pipeline.errors import PipelineError
 
-MODES = ("bare", "graph")
+MODES = ("bare", "graph", "graph_v2")
+
+# Руки, которым поднимается graph-контейнер и в которых MCP обязателен. Абляция
+# ``graph_v2`` — та же изоляция и тот же MCP-сервер, отличается только составом
+# включённых инструментов (только слой истории v2).
+GRAPH_MODES = ("graph", "graph_v2")
 
 
 @beartype
@@ -82,7 +87,7 @@ def run_one(
     record["gateway_health"] = dict(active.gateway_health)
     graph_id = ""
     try:
-        if mode == "graph":
+        if mode in GRAPH_MODES:
             graph_id = smoke_session.start_graph(
                 active, str(oracle["base"]), str(oracle["head"]), data
             )
@@ -265,11 +270,11 @@ def _integration(
         "hidden_restored": phases.get("restore", {}).get("ok") is True,
         "graph_container": graph_id,
     }
-    if mode == "graph":
+    if mode in GRAPH_MODES:
         details["mcp_used"] = calls > 0
         details["cutoff_enforced"] = cutoff_ok
     ok: bool = trace_ok and details["hidden_restored"] is True
-    if mode == "graph":
+    if mode in GRAPH_MODES:
         ok = ok and calls > 0 and graph_id != "" and cutoff_ok
     details["ok"] = ok
     return details
@@ -394,20 +399,43 @@ def _recreated(container_id: str, protected: list[str]) -> list[str]:
 
 @beartype
 def _prompt(public: dict[str, object], mode: str) -> str:
+    """Строит промпт: системные правила, плюс абзац про историю для graph-рук.
+
+    Абзац зависит от руки: ``graph_v2`` не упоминает выключенные v1-инструменты,
+    иначе агент звал бы недоступные инструменты.
+    """
     from db_pipeline.benchmark import tasks as task_rules
 
     text = task_rules.build_prompt(public)
-    if mode == "graph":
-        text += (
-            "\n\nBefore editing, use the MCP tools to locate the relevant code and "
-            "its history. read_versioned_source and find_code_symbols show the code "
-            "at or before the cutoff; symbol_history shows how a function changed; "
-            "tests_to_code maps a regression test to the code it exercises; "
-            "similar_fixes finds past commits with a similar intent; "
-            "find_error_origin locates the code that prints an error message. "
-            "Any revision the tools return is at or before the cutoff commit."
-        )
-    return text
+    if mode not in GRAPH_MODES:
+        return text
+    return text + _history_paragraph(mode)
+
+
+@beartype
+def _history_paragraph(mode: str) -> str:
+    """Абзац про MCP-историю для конкретного набора инструментов руки."""
+    opening = (
+        "\n\nBefore editing, use the MCP tools to locate the relevant code "
+        "and its history: "
+    )
+    closing = " Any revision the tools return is at or before the cutoff commit."
+    if mode == "graph_v2":
+        return opening + _V2_TOOL_INTENT + closing
+    return opening + _V1_TOOL_INTENT + " " + _V2_TOOL_INTENT + closing
+
+
+# Описания намерения (не механики API): что даёт инструмент и когда он нужен.
+_V1_TOOL_INTENT = (
+    "find_code_symbols and read_versioned_source show the code at or before the "
+    "cutoff, and search_git_history searches past commits;"
+)
+_V2_TOOL_INTENT = (
+    "symbol_history shows how one function changed over time, tests_to_code maps "
+    "a regression test to the code it exercises, similar_fixes finds past "
+    "commits with a similar intent, and find_error_origin locates the code that "
+    "prints an error message."
+)
 
 
 @beartype

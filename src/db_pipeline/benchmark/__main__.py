@@ -33,6 +33,8 @@ from beartype import beartype
 from db_pipeline.benchmark import budget, container, convert, paths, security
 from db_pipeline.benchmark import telemetry
 from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
+from db_pipeline.benchmark.eval import COMPARISON_LEFT, COMPARISON_RIGHT
+from db_pipeline.benchmark.runner import GRAPH_MODES
 from db_pipeline.environment import load_environment
 from db_pipeline.errors import PipelineError
 
@@ -383,22 +385,30 @@ def cmd_graph_canary(args: argparse.Namespace) -> int:
 
 @beartype
 def cmd_pairwise(args: argparse.Namespace) -> int:
-    """Парный прогон ``bare`` vs ``graph`` по секции split с counterbalanced порядком.
+    """Парный прогон рук по секции split с counterbalanced порядком.
 
-    Порядок рук чередуется по задачам (``bare`` первым на чётных, ``graph`` — на
+    Обычный режим — ``bare`` против ``graph`` (v1+v2). С ``--ablation`` правая
+    рука заменяется на ``graph_v2`` (только слой истории): сравниваются две
+    graph-руки, отличающиеся набором инструментов MCP.
+
+    Порядок рук чередуется по задачам (левая рука первой на чётных, правая — на
     нечётных) и по повторам, чтобы дрейф модели и кэш не благоприятствовали одной
     руке. Ошибка одной пары не останавливает остальные: запись об ошибке всё
     равно попадает в отчёт.
     """
     from db_pipeline.benchmark import eval as eval_module
     from db_pipeline.benchmark import session as smoke_session
-    from db_pipeline.benchmark.graph import split as split_module
 
     data = None if args.data is None else Path(args.data)
     names = _pairwise_names(args, data)
     if len(names) == 0:
         print(json.dumps({"error": f"секция {args.section} пуста"}, ensure_ascii=False))
         return 2
+    hands = (
+        (eval_module.ABLATION_LEFT, eval_module.ABLATION_RIGHT)
+        if args.ablation
+        else (eval_module.COMPARISON_LEFT, eval_module.COMPARISON_RIGHT)
+    )
     cfg = load_config()
     guard = _budget_guard(args.no_budget_check)
     if not guard["ok"]:
@@ -410,16 +420,24 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
     try:
         for index, name in enumerate(names):
             for repetition in range(args.repeats):
-                order = _hand_order(index, repetition)
+                order = _hand_order(index, repetition, hands)
                 for mode in order:
                     records.append(_smoke_run(name, mode, data, session))
     finally:
         cleanup = smoke_session.close_session(session)
     # Отчёт считается по записям этого прогона, а не по всему ``data/runs``:
     # иначе probe смешался бы со старым tune и повторы перенумеровались.
-    report = eval_module.build_report(data, args.section, records=records)
+    modes = tuple(dict.fromkeys(hands)) if args.ablation else (
+        COMPARISON_LEFT,
+        COMPARISON_RIGHT,
+    )
+    report = eval_module.build_report(
+        data, args.section, records=records, modes=modes
+    )
     report["section"] = args.section
     report["tasks"] = names
+    report["hands"] = list(hands)
+    report["ablation_run"] = args.ablation
     report["budget"] = guard
     report["cleanup"] = cleanup
     label = args.report_label or args.section
@@ -445,10 +463,14 @@ def _pairwise_names(args: argparse.Namespace, data: Path | None) -> list[str]:
 
 
 @beartype
-def _hand_order(task_index: int, repetition: int) -> tuple[str, str]:
-    """Чередование рук: чётная пара даёт ``bare`` первым, нечётная — ``graph``."""
+def _hand_order(
+    task_index: int,
+    repetition: int,
+    hands: tuple[str, str] = (COMPARISON_LEFT, COMPARISON_RIGHT),
+) -> tuple[str, str]:
+    """Чередование рук: чётная пара даёт левую руку первой, нечётная — правую."""
     first = (task_index + repetition) % 2
-    return ("bare", "graph") if first == 0 else ("graph", "bare")
+    return hands if first == 0 else (hands[1], hands[0])
 
 
 @beartype
@@ -548,7 +570,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = sub.add_parser("run", help="один прогон задачи")
     run_parser.add_argument("name")
-    run_parser.add_argument("--mode", choices=("bare", "graph"), default="bare")
+    run_parser.add_argument(
+        "--mode", choices=("bare", *GRAPH_MODES), default="bare"
+    )
     run_parser.add_argument("--keep", action="store_true", help="не удалять контейнер")
     run_parser.set_defaults(handler=cmd_run)
 
@@ -628,6 +652,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-budget-check",
         action="store_true",
         help="не проверять остаток кредитов OpenRouter перед batch",
+    )
+    pairwise_parser.add_argument(
+        "--ablation",
+        action="store_true",
+        help="сравнивать graph против graph_v2 (отключены инструменты v1) вместо bare против graph",
     )
     pairwise_parser.set_defaults(handler=cmd_pairwise)
 

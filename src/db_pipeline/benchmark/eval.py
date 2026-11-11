@@ -34,6 +34,29 @@ from db_pipeline.benchmark import completion, paths
 # Инструменты, которые меняют код: по ним определяется «первая правка».
 EDIT_TOOLS = ("edit", "write", "patch", "multiedit", "apply_patch", "str_replace")
 
+# Основное сравнение и абляция. ``bare`` против ``graph`` (v1+v2) — базовое
+# сравнение; ``graph`` против ``graph_v2`` — абляция слоя v1: две руки
+# отличаются только набором включённых инструментов MCP-сервера.
+COMPARISON_LEFT = "bare"
+COMPARISON_RIGHT = "graph"
+ABLATION_LEFT = "graph"
+ABLATION_RIGHT = "graph_v2"
+
+
+@beartype
+def record_step_limit(record: dict[str, object]) -> int:
+    """Лимит шагов из manifest записи: иначе ``step_limit`` считается нулевым.
+
+    Без этого прогоны, дошедшие до ``agent.build.steps``, классифицировались бы
+    как ``ok`` и попадали в пары: лимит шагов в отчёте расходился бы с
+    ``data/runs``.
+    """
+    manifest = record.get("manifest")
+    if not isinstance(manifest, dict):
+        return 0
+    value = cast("dict[str, object]", manifest).get("step_limit")
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
 
 @beartype
 @dataclass
@@ -106,24 +129,30 @@ def assign_repetitions(records: list[dict[str, object]]) -> None:
 
 
 @beartype
-def build_pairs(records: list[dict[str, object]]) -> list[PairOutcome]:
-    """Собирает пары ``bare``/``graph`` по ``(задача, повтор)``.
+def build_pairs(
+    records: list[dict[str, object]],
+    left: str = COMPARISON_LEFT,
+    right: str = COMPARISON_RIGHT,
+) -> list[PairOutcome]:
+    """Собирает пары ``left``/``right`` по ``(задача, повтор)``.
 
     В пары попадают только пригодные прогоны (``ok`` и ``self_stop_empty``):
     API-отказы и срабатывания лимитов исключаются, иначе McNemar измеряет
     надёжность шлюза, а не качество графа. Исключённые учитываются отдельно.
+    По умолчанию руки — ``bare`` и ``graph``; для абляции слоя v1 передаются
+    ``graph`` и ``graph_v2``.
     """
     buckets: dict[tuple[str, int], PairOutcome] = {}
     for record in records:
-        if not completion.countable(record):
+        if not completion.countable(record, record_step_limit(record)):
             continue
         repetition = int(cast("int", record.get("repetition", 0)))
         key = (str(record["func"]), repetition)
         pair = buckets.setdefault(key, PairOutcome(task=key[0], repetition=key[1]))
-        if record["mode"] == "bare":
+        if record["mode"] == left:
             pair.bare = record
             pair.bare_pass = bool(record.get("pass"))
-        elif record["mode"] == "graph":
+        elif record["mode"] == right:
             pair.graph = record
             pair.graph_pass = bool(record.get("pass"))
     return sorted(buckets.values(), key=lambda item: (item.task, item.repetition))
@@ -265,7 +294,7 @@ def gate_summary(record: dict[str, object]) -> dict[str, bool]:
 
 @beartype
 def aggregate(records: list[dict[str, object]]) -> dict[str, object]:
-    """Сводка по руке: pass, gate-ы, tokens, MCP и порядок вызовов."""
+    """Сводка по руке: pass, gate-ы, tokens, время, MCP и порядок вызовов."""
     total = len(records)
     passed = sum(1 for record in records if record.get("pass"))
     gates: dict[str, int] = {}
@@ -274,6 +303,8 @@ def aggregate(records: list[dict[str, object]]) -> dict[str, object]:
     mcp_runs = 0
     used_before_edit = 0
     turns: list[int] = []
+    seconds: list[int] = []
+    empty_diff = 0
     for record in records:
         if record.get("mcp_calls"):
             mcp_runs += 1
@@ -282,6 +313,9 @@ def aggregate(records: list[dict[str, object]]) -> dict[str, object]:
         turn = turns_to_first_mcp(record)
         if turn >= 0:
             turns.append(turn)
+        seconds.append(_int(record.get("seconds")))
+        if _int(record.get("diff_size")) == 0:
+            empty_diff += 1
         agent = record.get("agent")
         if isinstance(agent, dict):
             mapping = cast("dict[str, object]", agent)
@@ -295,12 +329,26 @@ def aggregate(records: list[dict[str, object]]) -> dict[str, object]:
         "pass": passed,
         "pass_rate": round(passed / total, 4) if total else 0.0,
         "gate_failures": gates,
+        "empty_diff": empty_diff,
         "tokens_input": tokens_in,
         "tokens_output": tokens_out,
+        "seconds_total": sum(seconds),
+        "seconds_median": median(seconds),
         "runs_with_mcp": mcp_runs,
         "history_before_edit": used_before_edit,
         "turns_to_first_mcpmedian": median(turns),
     }
+
+
+@beartype
+def _int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
 
 
 @beartype
@@ -354,15 +402,21 @@ def build_report(
     section: str = "holdout",
     repetitions: int = 2,
     records: list[dict[str, object]] | None = None,
+    modes: tuple[str, ...] = (COMPARISON_LEFT, COMPARISON_RIGHT, ABLATION_RIGHT),
 ) -> dict[str, object]:
     """Собирает итоговый отчёт: пары, McNemar, метрики и страту ``prior_twin``.
 
     ``records`` позволяет посчитать отчёт по одному прогону (например, probe) и
     не смешивать его с уже накопленными записями ``data/runs``. Если список не
     задан, читаются все сохранённые прогоны.
+
+    ``modes`` задаёт, какие руки входят в отчёт. По умолчанию это ``bare``,
+    ``graph`` и абляционная ``graph_v2``: основное сравнение — ``bare`` против
+    ``graph``; блок ``ablation`` сравнивает ``graph`` против ``graph_v2`` и
+    отвечает, вредит ли слой v1, когда есть рабочий grep.
     """
     selected = load_records(data) if records is None else list(records)
-    records = [record for record in selected if record.get("mode") in ("bare", "graph")]
+    records = [record for record in selected if record.get("mode") in modes]
     assign_repetitions(records)
     pairs = build_pairs(records)
     complete = [pair for pair in pairs if pair.bare and pair.graph]
@@ -373,19 +427,23 @@ def build_report(
     covered = [pair for pair in complete if pair.task not in missing_prism]
     covered_normal = [pair for pair in covered if pair.task not in twins]
     # Метрики рук считаются только по пригодным прогонам: иначе pass_rate
-    # разбавлен отказами API, которые к агенту отношения не имеют.
-    bare_records = [
-        record
-        for record in records
-        if record.get("mode") == "bare" and completion.countable(record)
-    ]
-    graph_records = [
-        record
-        for record in records
-        if record.get("mode") == "graph" and completion.countable(record)
-    ]
+    # разбавлен отказами API, которые к агенту отношения не имеют. Лимит шагов
+    # берётся из manifest каждой записи, чтобы step_limit не терялся.
+    by_mode = {
+        mode: [
+            record
+            for record in records
+            if record.get("mode") == mode
+            and completion.countable(record, record_step_limit(record))
+        ]
+        for mode in modes
+    }
     repeat_counts = sorted({pair.repetition for pair in complete})
-    excluded = [record for record in records if not completion.countable(record)]
+    excluded = [
+        record
+        for record in records
+        if not completion.countable(record, record_step_limit(record))
+    ]
     return {
         "pairs": len(complete),
         "incomplete_pairs": len(pairs) - len(complete),
@@ -394,20 +452,61 @@ def build_report(
         "repetitions_ok": len(repeat_counts) >= min(repetitions, max(1, len(complete))),
         "runs_total": len(records),
         "runs_excluded": len(excluded),
-        "completion": completion.summarize(records),
+        "completion": completion.summarize(records, _steps_of(records)),
         "mcnemar_pair_level": mcnemar(complete).to_dict(),
         "mcnemar_task_level": mcnemar(complete, task_level=True).to_dict(),
         "mcnemar_normal_only": mcnemar(normal).to_dict(),
         # Основная страта: база есть в PRISM и эталон не применялся прежде.
         "mcnemar_prism_covered": mcnemar(covered).to_dict(),
         "mcnemar_prism_covered_normal": mcnemar(covered_normal).to_dict(),
+        "ablation": _ablation(records, twins, missing_prism),
         "prior_twin_tasks": sorted(twins),
         "prior_twin_pairs": len(twin_pairs),
         "prism_missing_tasks": sorted(missing_prism),
         "prism_missing_pairs": len(complete) - len(covered),
-        "bare": aggregate(bare_records),
-        "graph": aggregate(graph_records),
+        "bare": aggregate(by_mode.get(COMPARISON_LEFT, [])),
+        "graph": aggregate(by_mode.get(COMPARISON_RIGHT, [])),
+        "graph_v2": aggregate(by_mode.get(ABLATION_RIGHT, [])),
     }
+
+
+@beartype
+def _steps_of(records: list[dict[str, object]]) -> int:
+    """Единый лимит шагов записей: manifest одинаков для всего прогона."""
+    for record in records:
+        limit = record_step_limit(record)
+        if limit > 0:
+            return limit
+    return 0
+
+
+@beartype
+def _ablation(
+    records: list[dict[str, object]],
+    twins: set[str],
+    missing_prism: set[str],
+) -> dict[str, object]:
+    """Блок абляции: ``graph`` (v1+v2) против ``graph_v2`` (только v2).
+
+    Обе руки отличаются лишь набором инструментов MCP: v1 в абляции выключен.
+    ``edges == 0`` означает, что слои неразличимы по pass; ``both_pass`` и
+    ``both_fail`` показывают, что решает не граф, а сама задача.
+    """
+    pairs = build_pairs(records, ABLATION_LEFT, ABLATION_RIGHT)
+    complete = [pair for pair in pairs if pair.bare and pair.graph]
+    normal = [pair for pair in complete if pair.task not in twins]
+    covered = [pair for pair in complete if pair.task not in missing_prism]
+    return {
+        "left": ABLATION_LEFT,
+        "right": ABLATION_RIGHT,
+        "pairs": len(complete),
+        "incomplete_pairs": len(pairs) - len(complete),
+        "mcnemar_pair_level": mcnemar(complete).to_dict(),
+        "mcnemar_task_level": mcnemar(complete, task_level=True).to_dict(),
+        "mcnemar_normal_only": mcnemar(normal).to_dict(),
+        "mcnemar_prism_covered": mcnemar(covered).to_dict(),
+    }
+
 
 @beartype
 def write_report(data: Path | None = None, section: str = "holdout") -> Path:
