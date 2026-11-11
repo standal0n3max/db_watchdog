@@ -150,7 +150,7 @@ src/db_pipeline/               стадии harvesting и модель экзе�
 src/db_pipeline/environment.py загрузка корневого .env на границе CLI
 src/db_pipeline/benchmark/     benchmark: конвертер, runner, session, probe, opencode, telemetry
 src/db_pipeline/benchmark/graph/ индекс, store, cutoff, MCP-сервер и probe-клиент
-docs/                          протокол, изоляция, Langfuse, граф, smoke, происхождение, отчёт факта
+docs/                          протокол, изоляция, Langfuse, граф, smoke, выгрузка, происхождение, отчёт факта
 tests/                         фильтр, разрез патча, журнал, конвертер, граф, изоляция, окружение
 constraints/                   constraints Airflow 2.11 для Python 3.11
 data/                          в gitignore: клон, журнал, JSON, логи, индекс, AIRFLOW_HOME
@@ -166,6 +166,7 @@ data/                          в gitignore: клон, журнал, JSON, ло�
 - `data/oracle/<sha>/` — логи сборки, «до» и «после»;
 - `data/benchmark/postgres/{tasks,oracle,prep}` — публичные задачи, приватные oracle и prep-патчи benchmark-прогона;
 - `data/graph/postgres.sqlite` — SQLite-индекс графа (union пяти баз);
+- `data/releases/<версия>/` — публичная выгрузка датасета (манифест, задачи, split, лицензии);
 - `data/reports/smoke-postgres.json` — сводный отчёт парного smoke;
 - `data/filter_sample.jsonl` — журнал фильтра на 20 изменениях;
 - `data/decisions.md` — фактические команды и ошибки среды;
@@ -269,9 +270,21 @@ uv run python -m db_pipeline.benchmark probe            # дешёвый E2E pro
 uv run python -m db_pipeline.benchmark smoke            # парный smoke bare/graph на пяти задачах
 uv run python -m db_pipeline.benchmark graph-index      # индекс графа с отсечкой
 uv run python -m db_pipeline.benchmark graph-index --union --per-base 50
+uv run python -m db_pipeline.benchmark release          # публичная выгрузка задач
+uv run python -m db_pipeline.benchmark release-verify --target <каталог>
 ```
 
 Конвертер раскладывает карточки `data/tasks/postgres__*.json` в публичную задачу (`area`, `goal`, `contract`, `graded_by`) и приватный oracle (`head`/`base`, reverse source patch, тестовый патч, эталон). Публичная часть не содержит эталона и содержимого тестов.
+
+### Публичная выгрузка датасета
+
+Команда `release` собирает публичный слой датасета в `data/releases/<версия>` (каталог в `data/`, в git не попадает). Это ответ на требование трека Datasets and Benchmarks по доступности: 300 задач PostgreSQL выкладываются со стабильными `id`, лицензиями, `split.json` и sha256-манифестом. Наружу кладутся только те поля, что уже прошли `validate_public`; эталон и тест в публичный слой не попадают никогда. Приватный oracle добавляется флагом `--with-oracle` и публиковать его вместе с `tasks/` нельзя.
+
+- `id` = `postgres__<head[:12]>`, выведен из коммита-эталона, поэтому не меняется при пересборке; совпадение коротких префиксов — ошибка.
+- `manifest.json` байт-детерминирован: два ребилда дают одинаковый `content_sha256`, расхождение означает изменение данных, а не времени сборки.
+- `release-verify --target <каталог>` сверяет каждый `sha256`, сводный хэш, состав файлов и инвариант «в публичном слое нет фрагментов diff»; ненулевой код возврата — релиз повреждён или подменён.
+
+Полный регламент публикации — [docs/release.md](docs/release.md).
 
 ### Оркестрация
 
@@ -297,7 +310,7 @@ Run records immutable: каждый прогон пишется отдельны
 
 Модуль `benchmark/completion.py` помечает каждый прогон категорией (`ok`, `self_stop_empty`, `infra_fail_truncated`, `infra_fail_wall`, `length`, `step_limit`, `crash_unknown`). В пары McNemar идут только `ok` и `self_stop_empty`: отказы API считаются отдельным счётчиком, иначе измеряется надёжность шлюза, а не эффект графа.
 
-Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md), [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
+Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md), [docs/release.md](docs/release.md), [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
 
 ### Секреты и `.env`
 
@@ -312,7 +325,7 @@ cp .env.example .env
 
 Импорт JSON в pg-gym, повтор 104 задач, пять повторов и языковой отбор. Хостовый путь `opencode_run.py` больше не участвует в benchmark-прогоне: агент работает в task-контейнере, а ключ модели выдаёт model-gateway.
 
-Полного парного smoke 5×2 пока нет: последний запуск остановлен после четырёх прогонов, сводный `data/reports/smoke-postgres.json` не дописан (см. [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md)).
+Полного парного smoke 5×2 пока нет: последний запуск остановлен после четырёх прогонов, сводный `data/reports/smoke-postgres.json` не дописан (см. [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md)). Выгрузка датасета собрана локально (`release`), но наружу не публиковалась: решение о форме публикации остаётся за руководителем.
 
 ## Внешние зависимости
 
