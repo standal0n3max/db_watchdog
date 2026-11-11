@@ -283,6 +283,8 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 Эффективный конфиг OpenCode генерируется на каждый run и передаётся в контейнер, а не берётся из образа: `bare`-конфиг MCP не содержит, `graph`-конфиг подключает сервер графа как remote Streamable HTTP (`http://graph:8765/mcp`). Hash конфига пишется в manifest. Task-container не видит `OPENROUTER_API_KEY` — ключ живёт только в model-gateway, который проверяет allowlist модели и разрешает лишь OpenAI-compatible endpoints.
 
+Лимиты прогона сведены в `BenchmarkConfig` и попадают в manifest как `step_limit` (реальный `agent.build.steps`; флага лимита у `opencode run` нет) и `max_tokens` (потолок ответа модели, по умолчанию 2048: 4096 не вмещался в остаток кредитов ключа и обрывал генерацию с первой секунды). Перед batch `pairwise` проверяет ключ и остаток кредитов OpenRouter, а шлюз повторяет ответы 402/429 по `Retry-After`.
+
 ### Граф кода
 
 Свой MCP-сервер с тремя инструментами: `find_code_symbols` (символы C-кода по имени до cutoff), `read_versioned_source` (реальный фрагмент файла на закреплённой ревизии с SHA-256 и byte span), `search_git_history` (сообщения коммитов, hunks и тела кода). Любая возвращаемая revision обязана быть предком `base_sha`; `head_sha` и его потомки не выдаются, нулевой результат пишется в audit log.
@@ -292,6 +294,8 @@ Union-индекс строится по последним 50 предкам к
 ### Отчёт
 
 Run records immutable: каждый прогон пишется отдельным файлом в `data/runs/` с session/run ID и не перезаписывает предыдущие. Сводный отчёт `data/reports/smoke-postgres.json` содержит pass@1, gates, test outcomes, latency, tokens, tool counts, MCP calls, effective base/head, ссылки Langfuse и отчёт cleanup. На пяти задачах выводится только работоспособность E2E, не статистическая значимость эффекта графа.
+
+Модуль `benchmark/completion.py` помечает каждый прогон категорией (`ok`, `self_stop_empty`, `infra_fail_truncated`, `infra_fail_wall`, `length`, `step_limit`, `crash_unknown`). В пары McNemar идут только `ok` и `self_stop_empty`: отказы API считаются отдельным счётчиком, иначе измеряется надёжность шлюза, а не эффект графа.
 
 Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md), [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
 
