@@ -22,6 +22,7 @@ __all__ = [
     "pg_clone",
     "prep_dir",
     "project_root",
+    "release_dir",
     "reports_dir",
     "resolve_data",
     "runs_dir",
@@ -83,6 +84,13 @@ def graph_dir(data: Path | None = None) -> Path:
 @beartype
 def pg_clone(data: Path | None = None) -> Path:
     return resolve_data(data) / "clones" / "postgres"
+
+
+@beartype
+def release_dir(data: Path | None = None, version: str = "") -> Path:
+    """Каталог локального релиза датасета: ``data/releases/<version>``."""
+    base = resolve_data(data) / "releases"
+    return base if version == "" else base / version
 
 
 @beartype

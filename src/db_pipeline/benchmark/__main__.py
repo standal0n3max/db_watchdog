@@ -7,7 +7,9 @@
 - ``build`` — собрать образ задачи, graph и model-gateway;
 - ``run`` — один прогон задачи в заданном режиме (``bare`` или ``graph``);
 - ``smoke`` — парный smoke на пяти задачах: 5 ``bare`` и 5 ``graph``;
-- ``graph-index`` — построить локальный индекс графа или union-индекс пяти баз.
+- ``graph-index`` — построить локальный индекс графа или union-индекс пяти баз;
+- ``release`` — публичная выгрузка задач со стабильными id, лицензиями и
+  sha256-манифестом; ``release-verify`` — сверка распакованного релиза с манифестом.
 
 Smoke требует ровно пять заранее зарегистрированных задач и десять запусков в
 заранее фиксированном counterbalanced порядке B/G, G/B, B/G, G/B, B/G. Единичная
@@ -32,6 +34,7 @@ from db_pipeline.benchmark import budget, container, convert, paths, security
 from db_pipeline.benchmark import telemetry
 from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
 from db_pipeline.environment import load_environment
+from db_pipeline.errors import PipelineError
 
 SMOKE_TASKS = (
     "d764d61af316",
@@ -470,6 +473,41 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 @beartype
+def cmd_release(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark import release as release_module
+
+    data = None if args.data is None else Path(args.data)
+    target = None if args.target == "" else Path(args.target)
+    try:
+        manifest = release_module.build(
+            data=data,
+            target=target,
+            version=args.version,
+            with_oracle=args.with_oracle,
+            force=args.force,
+        )
+    except PipelineError as exc:
+        print(json.dumps({"error": exc.reason}, ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    return 0
+
+
+@beartype
+def cmd_release_verify(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark import release as release_module
+
+    target = Path(args.target)
+    try:
+        report = release_module.verify(target)
+    except PipelineError as exc:
+        print(json.dumps({"error": exc.reason, "ok": False}, ensure_ascii=False, indent=2))
+        return 1
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report.get("ok") else 1
+
+
+@beartype
 def _smoke_bases(data: Path | None) -> list[str]:
     bases: list[str] = []
     for name in (f"postgres__{item}" for item in SMOKE_TASKS):
@@ -598,6 +636,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--section", default="holdout", choices=("dev", "tune", "holdout", "frozen")
     )
     eval_parser.set_defaults(handler=cmd_eval)
+
+    release_parser = sub.add_parser(
+        "release", help="публичная выгрузка задач: стабильные id, лицензии, sha256-манифест"
+    )
+    release_parser.add_argument(
+        "--target", default="", help="каталог выгрузки (по умолчанию data/releases/<version>)"
+    )
+    release_parser.add_argument("--version", default="0.1.0", help="версия релиза")
+    release_parser.add_argument(
+        "--with-oracle", action="store_true", help="включить приватный слой oracle"
+    )
+    release_parser.add_argument(
+        "--force", action="store_true", help="перезаписать непустой каталог"
+    )
+    release_parser.set_defaults(handler=cmd_release)
+
+    verify_parser = sub.add_parser(
+        "release-verify", help="сверить распакованный релиз с манифестом"
+    )
+    verify_parser.add_argument("--target", required=True, help="каталог релиза")
+    verify_parser.set_defaults(handler=cmd_release_verify)
 
     return parser
 
