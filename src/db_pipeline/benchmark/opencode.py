@@ -19,7 +19,10 @@ from beartype import beartype
 
 from db_pipeline.errors import PipelineError
 
-DEFAULT_MAX_TURNS = 50
+# Реальный лимит шагов агента: попадает в ``agent.build.steps`` эффективного
+# конфига. ``opencode run`` собственного флага лимита не имеет.
+DEFAULT_STEP_LIMIT = 80
+
 MODES = ("bare", "graph")
 
 
@@ -28,10 +31,10 @@ MODES = ("bare", "graph")
 class AgentConfig:
     provider: str = "pgpro"
     model: str = ""
-    max_turns: int = DEFAULT_MAX_TURNS
     temperature: float = 0.0
     context_length: int = 32768
     max_tokens: int = 4096
+    step_limit: int = DEFAULT_STEP_LIMIT
     timeout: int = 1800
 
 
@@ -234,12 +237,17 @@ def build_config(
     model: str,
     context_length: int = 32768,
     max_tokens: int = 4096,
+    step_limit: int = DEFAULT_STEP_LIMIT,
 ) -> dict[str, object]:
     """Строит эффективный OpenCode-конфиг: bare без MCP, graph с remote MCP.
 
     Секретов в конфиге нет: ключ провайдера подставляется из
     ``POSTGRES_GYM_PROVIDER_KEY`` на стороне контейнера. ``graph``-режим
     подключает три инструмента по Streamable HTTP с увеличенным таймаутом.
+
+    ``agent.build.steps`` задаёт реальный лимит ходов агента по умолчанию
+    (``build`` — primary-агент OpenCode); без него ``opencode run`` ходов не
+    ограничивает.
     """
     if mode not in MODES:
         raise PipelineError("opencode", f"режим {mode} неизвестен")
@@ -263,6 +271,7 @@ def build_config(
                 },
             }
         },
+        "agent": {"build": {"steps": step_limit}},
         "permission": {"webfetch": "deny", "external_directory": "deny"},
         "tools": {"webfetch": False},
     }

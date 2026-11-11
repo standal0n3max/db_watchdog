@@ -45,6 +45,13 @@ class OpenCodeConfigTests(unittest.TestCase):
         self.assertIn("POSTGRES_GYM_PROVIDER_KEY", text)
         self.assertNotIn("OPENROUTER_API_KEY", text)
 
+    def test_build_config_sets_step_limit(self) -> None:
+        config = opencode.build_config("bare", "pgpro", "bench", step_limit=80)
+        agent = config["agent"]
+        self.assertIsInstance(agent, dict)
+        build = cast("dict[str, object]", cast("dict[str, object]", agent)["build"])
+        self.assertEqual(build["steps"], 80)
+
 
 class RunCommandTests(unittest.TestCase):
     def test_no_unsupported_standalone_flag(self) -> None:

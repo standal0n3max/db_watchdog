@@ -33,6 +33,9 @@ def _record(
         "mcp_calls": sum(1 for name in (events or []) if name.startswith("graph_")),
         "agent": {"tokens_input": 10, "tokens_output": 5},
         "gates": {"tests_unchanged": {"ok": True}},
+        # Прогон пригоден только при наличии генераций: без них классификатор
+        # относит запись к API-отказу и исключает из пар.
+        "generations": [{"reason": "tool-calls", "output_tokens": 10}],
     }
 
 
@@ -251,6 +254,13 @@ class ReportTests(unittest.TestCase):
         target = eval_module.write_report(self.data, "tune")
         self.assertTrue(target.is_file())
         self.assertEqual(target.name, "pairwise-tune.json")
+
+    def test_completion_counts_present_even_when_empty(self) -> None:
+        self._write(_record("postgres__a", "bare", True, "2026-01-01T00:00:00+00:00"))
+        report = eval_module.build_report(self.data)
+        counted = cast("dict[str, int]", report["completion"])
+        self.assertIn("ok", counted)
+        self.assertIn("infra_fail_wall", counted)
 
     def test_load_records_skips_broken_json(self) -> None:
         (self.data / "runs" / "broken.json").write_text("{not json", encoding="utf-8")

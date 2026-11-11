@@ -18,6 +18,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from beartype import beartype
 
@@ -46,6 +47,7 @@ class SmokeSession:
     context: str = ""
     graph_ids: list[str] = field(default_factory=list[str])
     cleanup_ok: bool = True
+    gateway_health: dict[str, object] = field(default_factory=dict[str, object])
 
 
 @beartype
@@ -59,8 +61,14 @@ def open_session(
     internal = f"{cfg.internal_network}-{suffix}"
     container.network_create(internal, internal=True, context=context)
     external = cfg.network or "bridge"
-    gateway_id = _start_gateway(cfg, external, internal, context)
-    return SmokeSession(cfg=cfg, network=internal, gateway_id=gateway_id, context=context)
+    gateway_id, health = _start_gateway(cfg, external, internal, context)
+    return SmokeSession(
+        cfg=cfg,
+        network=internal,
+        gateway_id=gateway_id,
+        context=context,
+        gateway_health=health,
+    )
 
 
 @beartype
@@ -69,7 +77,7 @@ def _start_gateway(
     external: str,
     internal: str,
     context: str,
-) -> str:
+) -> tuple[str, dict[str, object]]:
     key = _openrouter_key()
     if key == "":
         raise PipelineError("gateway", "OPENROUTER_API_KEY не задан")
@@ -97,7 +105,30 @@ def _start_gateway(
     if not container.wait_http_ready(url, timeout=120):
         container.remove_container(gateway_id, context=context)
         raise PipelineError("gateway", "gateway не прошёл readiness /health")
-    return gateway_id
+    health = _gateway_health(url)
+    remaining = health.get("budget_remaining")
+    if isinstance(remaining, (int, float)) and not isinstance(remaining, bool) and remaining <= 0:
+        container.remove_container(gateway_id, context=context)
+        raise PipelineError("gateway", "бюджет OpenRouter исчерпан")
+    return gateway_id, health
+
+
+@beartype
+def _gateway_health(url: str) -> dict[str, object]:
+    """Читает ``/health`` шлюза: ключ, модель и остаток кредитов."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=15) as response:
+            loaded: object = json.loads(response.read().decode())
+    except (urllib.error.URLError, OSError, ValueError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    raw = cast("dict[object, object]", loaded)
+    return {str(key): item for key, item in raw.items()}
 
 
 @beartype

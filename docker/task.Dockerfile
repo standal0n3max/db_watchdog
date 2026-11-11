@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bison build-essential ca-certificates curl flex git gosu libicu-dev \
-        libssl3 locales openssl perl pkg-config python3 python3-venv tzdata zlib1g-dev \
+        libssl3 locales openssl perl pkg-config python3 python3-venv ripgrep tzdata zlib1g-dev \
     && localedef -i de_DE -f UTF-8 de_DE.UTF-8 \
     && localedef -i en_US -f UTF-8 en_US.UTF-8 \
     && localedef -i sv_SE -f UTF-8 sv_SE.UTF-8 \

@@ -30,6 +30,7 @@ from typing import cast
 from beartype import beartype
 
 from db_pipeline.benchmark import (
+    completion,
     container,
     convert,
     opencode,
@@ -78,6 +79,7 @@ def run_one(
 
     owns_session = smoke is None
     active = smoke or smoke_session.open_session(cfg, data)
+    record["gateway_health"] = dict(active.gateway_health)
     graph_id = ""
     try:
         if mode == "graph":
@@ -195,6 +197,7 @@ def _run_in_container(
         record["mcp_calls"] = mcp_calls(transcript)
         record["generations"] = [asdict(g) for g in transcript.generations]
         record["tool_events"] = [asdict(t) for t in transcript.tools]
+        record["completion"] = completion.classify(record, cfg.step_limit).to_dict()
         record["seconds"] = round((datetime.now(UTC) - started).total_seconds(), 1)
 
         record["langfuse"] = _publish_trace(
@@ -274,9 +277,13 @@ def _integration(
 
 @beartype
 def _harness_env(cfg: BenchmarkConfig) -> str:
+    """Передаёт в контейнер ровно те лимиты, что заданы в конфиге прогона.
+
+    ``step_limit`` пишется как реальный лимит ходов, а не снятый ``max_turns``.
+    """
     return json.dumps(
         {
-            "max_turns": cfg.max_turns,
+            "step_limit": cfg.step_limit,
             "temperature": cfg.temperature,
             "context_length": 32768,
             "max_tokens": 4096,
@@ -419,7 +426,7 @@ def _run_agent(
         provider=cfg.provider,
         model=cfg.model,
         context_length=32768,
-        max_tokens=4096,
+        step_limit=cfg.step_limit,
     )
     config_text = opencode.config_text(config)
     record["opencode_config_sha256"] = opencode.config_sha256(config)
@@ -432,8 +439,8 @@ def _run_agent(
     agent_config = opencode.AgentConfig(
         provider=cfg.provider,
         model=cfg.model,
-        max_turns=cfg.max_turns,
         temperature=cfg.temperature,
+        step_limit=cfg.step_limit,
         timeout=cfg.agent_timeout,
     )
     command = opencode.run_command(agent_config, prompt)

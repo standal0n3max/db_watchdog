@@ -133,7 +133,17 @@ def serve() -> None:
 
     @server.tool()
     def find_code_symbols(name: str, limit: int = 20) -> dict[str, object]:
-        """Find C-code symbols by name on revisions at or before the cutoff."""
+        """Locate C symbols (functions, structs, macros) by name in history.
+
+        Use this to find which files and revisions define or reference a symbol
+        before editing. Call it as ``graph_find_code_symbols`` when the MCP
+        server prefix is exposed, or as ``find_code_symbols`` when it is not:
+        the tool name is always the plain one above.
+
+        ``name`` is a bare identifier such as ``heap_insert`` (not a path).
+        Returns matching revisions; every revision is an ancestor of base_sha,
+        so nothing after the cutoff leaks. ``limit`` caps the number of hits.
+        """
         with closing(store.open_store(db)) as conn:
             return tools.find_code_symbols(conn, cutoff, name, limit)
 
@@ -146,10 +156,17 @@ def serve() -> None:
         start_line: int | None = None,
         end_line: int | None = None,
     ) -> dict[str, object]:
-        """Read a file fragment at a pinned revision if it is an ancestor of base_sha.
+        """Read a source file fragment at a pinned revision before the cutoff.
 
-        ``offset``/``limit`` are bytes; ``start_line``/``end_line`` (1-based) take
-        priority and return whole lines.
+        Use this when you have a path and a revision (from find_code_symbols or
+        search_git_history) and want the surrounding code. Call it as
+        ``graph_read_versioned_source`` with the MCP prefix, or
+        ``read_versioned_source`` without it: the tool name is the plain one.
+
+        ``revision`` must be an ancestor of base_sha; any later revision is
+        rejected. ``path`` is repository-relative (``src/backend/...``).
+        ``offset``/``limit`` are bytes; ``start_line``/``end_line`` (1-based)
+        take priority and return whole lines.
         """
         with closing(store.open_store(db)) as conn:
             return tools.read_versioned_source(
@@ -158,7 +175,14 @@ def serve() -> None:
 
     @server.tool()
     def search_git_history(query: str, limit: int = 20) -> dict[str, object]:
-        """Search commit messages and hunks before the cutoff."""
+        """Search commit messages and hunks for a natural-language query.
+
+        Use this to find when and why code changed, for example a bug-fix phrase
+        from the task description. Call it as ``graph_search_git_history`` with
+        the MCP prefix or ``search_git_history`` without it: the name is plain.
+
+        ``query`` is free text; results are limited to ancestors of base_sha.
+        """
         with closing(store.open_store(db)) as conn:
             return tools.search_git_history(conn, cutoff, query, limit)
 
@@ -167,10 +191,15 @@ def serve() -> None:
 
         @server.tool()
         def symbol_history(path: str, name: str, limit: int = 20) -> dict[str, object]:
-            """History of a C symbol in a file: commits up to the cutoff.
+            """Trace how one C symbol changed over time, up to the cutoff.
 
-            Returns each change with the symbol's own line range (not the hunk's)
-            and whether the record is a definition or a prototype.
+            Use this to see the commits that touched a function before the
+            current bug was introduced. Call it as ``graph_symbol_history`` with
+            the MCP prefix or ``symbol_history`` without it: the name is plain.
+
+            ``path`` is the file from find_code_symbols and ``name`` is the bare
+            symbol. Each record carries the symbol's own line range (not the
+            hunk's) and whether it is a definition or a prototype.
             """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
@@ -180,7 +209,16 @@ def serve() -> None:
 
         @server.tool()
         def tests_to_code(test: str, limit: int = 20) -> dict[str, object]:
-            """Code files historically changed together with a regression test."""
+            """Find production code that changed together with a given test.
+
+            Use this to jump from a regression test named in the task to the
+            source files it exercises. Call it as ``graph_tests_to_code`` with
+            the MCP prefix or ``tests_to_code`` without it: the name is plain.
+
+            ``test`` is a repository-relative test path (``src/test/regress/...``
+            or ``src/test/regress/sql/...``). Results are ranked by co-change
+            weight and limited to ancestors of base_sha.
+            """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
                 return history_tools.tests_to_code(index, test, limit)
@@ -189,7 +227,16 @@ def serve() -> None:
 
         @server.tool()
         def similar_fixes(query: str, limit: int = 20) -> dict[str, object]:
-            """Past commits whose message resembles a natural-language query."""
+            """Find past commits with an intent similar to a natural-language query.
+
+            Use this to look for how a comparable bug was fixed before, when you
+            know the symptom but not the code. Call it as ``graph_similar_fixes``
+            with the MCP prefix or ``similar_fixes`` without it: the name is
+            plain.
+
+            ``query`` is free text, for example ``fix heap corruption on
+            concurrent insert``. Only ancestors of base_sha are searched.
+            """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
                 return history_tools.similar_fixes(index, query, limit)
@@ -198,7 +245,17 @@ def serve() -> None:
 
         @server.tool()
         def find_error_origin(message: str, limit: int = 20) -> dict[str, object]:
-            """Locate the C source that prints a given PostgreSQL error message."""
+            """Locate the C source that prints a given PostgreSQL error message.
+
+            Use this when the task or a failing test shows an error string and
+            you need the ``ereport``/``errmsg`` site that emits it. Call it as
+            ``graph_find_error_origin`` with the MCP prefix or
+            ``find_error_origin`` without it: the name is plain.
+
+            ``message`` is the literal text, for example ``cache lookup
+            failed``. Placeholders such as ``%s`` are normalized before
+            matching. Results are limited to ancestors of base_sha.
+            """
             index = history_tools.open_index(history_db, db, cutoff_v2())
             try:
                 return history_tools.find_error_origin(index, message, limit)

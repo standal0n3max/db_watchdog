@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from beartype import beartype
 
+from db_pipeline.benchmark.opencode import DEFAULT_STEP_LIMIT
 from db_pipeline.benchmark.telemetry import OtelConfig
 
 
@@ -32,7 +33,7 @@ class BenchmarkConfig:
     gateway_image: str
     model: str
     provider: str
-    max_turns: int
+    step_limit: int
     temperature: float
     agent_timeout: int
     container_timeout: int
@@ -43,13 +44,20 @@ class BenchmarkConfig:
     otel: OtelConfig
 
     def to_manifest(self) -> dict[str, object]:
+        """Фиксирует ровно те лимиты, что передаются агенту.
+
+        ``step_limit`` — реальное ограничение числа ходов
+        (``agent.build.steps`` у OpenCode), ``max_tokens`` — потолок ответа
+        модели. Прежний ``max_turns`` не передавался в ``opencode run`` и потому
+        удалён из manifest: он не описывал прогон.
+        """
         return {
             "image": self.image,
             "graph_image": self.graph_image,
             "gateway_image": self.gateway_image,
             "model": self.model,
             "provider": self.provider,
-            "max_turns": self.max_turns,
+            "step_limit": self.step_limit,
             "temperature": self.temperature,
             "agent_timeout": self.agent_timeout,
             "opencode_version": self.opencode_version,
@@ -71,7 +79,7 @@ def load_config() -> BenchmarkConfig:
         gateway_image=_env("BENCH_GATEWAY_IMAGE", "db-pipeline-bench-gateway:local"),
         model=_env("BENCH_MODEL", "deepseek/deepseek-v4-flash"),
         provider=_env("BENCH_PROVIDER", "pgpro"),
-        max_turns=int(_env("BENCH_MAX_TURNS", "50")),
+        step_limit=int(_env("BENCH_STEP_LIMIT", str(DEFAULT_STEP_LIMIT))),
         temperature=float(_env("BENCH_TEMPERATURE", "0")),
         agent_timeout=int(_env("BENCH_AGENT_TIMEOUT", "1800")),
         container_timeout=int(_env("BENCH_CONTAINER_TIMEOUT", "3600")),

@@ -29,7 +29,7 @@ from typing import cast
 
 from beartype import beartype
 
-from db_pipeline.benchmark import paths
+from db_pipeline.benchmark import completion, paths
 
 # Инструменты, которые меняют код: по ним определяется «первая правка».
 EDIT_TOOLS = ("edit", "write", "patch", "multiedit", "apply_patch", "str_replace")
@@ -367,6 +367,8 @@ def build_report(
         "repetitions": len(repeat_counts),
         "repetitions_requested": repetitions,
         "repetitions_ok": len(repeat_counts) >= min(repetitions, max(1, len(complete))),
+        "runs_total": len(records),
+        "completion": completion.summarize(records),
         "mcnemar_pair_level": mcnemar(complete).to_dict(),
         "mcnemar_task_level": mcnemar(complete, task_level=True).to_dict(),
         "mcnemar_normal_only": mcnemar(normal).to_dict(),

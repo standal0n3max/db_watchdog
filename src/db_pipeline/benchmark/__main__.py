@@ -23,11 +23,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from beartype import beartype
 
-from db_pipeline.benchmark import container, convert, paths, security
+from db_pipeline.benchmark import budget, container, convert, paths, security
 from db_pipeline.benchmark import telemetry
 from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
 from db_pipeline.environment import load_environment
@@ -400,6 +401,11 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
         print(json.dumps({"error": f"секция {args.section} пуста"}, ensure_ascii=False))
         return 2
     cfg = load_config()
+    guard = _budget_guard(args.no_budget_check)
+    if not guard["ok"]:
+        print(json.dumps({"error": "бюджет OpenRouter исчерпан", "budget": guard},
+                         ensure_ascii=False))
+        return 2
     session = smoke_session.open_session(cfg, data)
     records: list[dict[str, object]] = []
     try:
@@ -427,6 +433,15 @@ def _hand_order(task_index: int, repetition: int) -> tuple[str, str]:
     """Чередование рук: чётная пара даёт ``bare`` первым, нечётная — ``graph``."""
     first = (task_index + repetition) % 2
     return ("bare", "graph") if first == 0 else ("graph", "bare")
+
+
+@beartype
+def _budget_guard(skip: bool) -> dict[str, object]:
+    """Проверяет бюджет OpenRouter перед batch, если его не отключили флагом."""
+    if skip:
+        return {"ok": True, "skipped": True}
+    report = budget.check_budget(os.environ.get("OPENROUTER_API_KEY", ""))
+    return report.to_dict()
 
 
 @beartype
@@ -547,6 +562,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--section", default="tune", choices=("dev", "tune", "holdout", "frozen")
     )
     pairwise_parser.add_argument("--repeats", type=int, default=2)
+    pairwise_parser.add_argument(
+        "--no-budget-check",
+        action="store_true",
+        help="не проверять остаток кредитов OpenRouter перед batch",
+    )
     pairwise_parser.set_defaults(handler=cmd_pairwise)
 
     eval_parser = sub.add_parser("eval", help="отчёт McNemar по сохранённым прогонам")
