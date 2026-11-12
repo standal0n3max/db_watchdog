@@ -20,7 +20,7 @@ from db_pipeline.benchmark.graph import split as split_module
 from db_pipeline.benchmark.graph import view as graph_view
 from db_pipeline.benchmark.graph.gitgraph import graph_db, table_hashes
 
-_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{4,}")
+_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
 
 
 @beartype
@@ -231,12 +231,17 @@ def _source_path(opened: graph_view.GraphView) -> str:
 @beartype
 def _subject_word(opened: graph_view.GraphView) -> str:
     row = opened.conn.execute(
-        "SELECT subject FROM commits WHERE oid = ?", (opened.base_sha,)
+        "SELECT subject, message FROM commits WHERE oid = ?", (opened.base_sha,)
     ).fetchone()
     if row is None:
         return ""
-    match = _TOKEN_RE.search(str(row[0]))
-    return "" if match is None else match.group(0)
+    text = f"{row[0]}\n{row[1]}"
+    for match in _TOKEN_RE.finditer(text):
+        token = match.group(0)
+        letters = sum(1 for char in token if char.isalpha())
+        if letters >= 4 and letters * 2 >= len(token):
+            return token
+    return ""
 
 
 @beartype
