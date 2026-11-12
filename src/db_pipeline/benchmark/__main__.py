@@ -452,6 +452,7 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
     report = eval_module.build_report(
         data,
         args.section,
+        repetitions=args.repeats,
         records=records,
         modes=hands,
         experiment_id=cfg.experiment_id,
