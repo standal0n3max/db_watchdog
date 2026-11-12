@@ -38,12 +38,15 @@ class GraphView:
     lock: threading.Lock
 
 
+_LINK_CACHE: dict[str, tuple[dict[str, list[str]], dict[str, list[str]]]] = {}
+
+
 @beartype
 def open_view(db: Path, base_sha: str, head_sha: str = "") -> GraphView:
     """Строит отсечку один раз. База после сборки уже без WAL."""
     conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True)
     conn.row_factory = sqlite3.Row
-    parents, children = _links(conn)
+    parents, children = _cached_links(db, conn)
     ancestors = _walk(base_sha, parents)
     hidden: set[str] = set()
     if head_sha != "":
@@ -71,6 +74,19 @@ def open_view(db: Path, base_sha: str, head_sha: str = "") -> GraphView:
 @beartype
 def close_view(view: GraphView) -> None:
     view.conn.close()
+
+
+@beartype
+def _cached_links(
+    db: Path, conn: sqlite3.Connection
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    key = str(db.resolve())
+    cached = _LINK_CACHE.get(key)
+    if cached is not None:
+        return cached
+    loaded = _links(conn)
+    _LINK_CACHE[key] = loaded
+    return loaded
 
 
 @beartype

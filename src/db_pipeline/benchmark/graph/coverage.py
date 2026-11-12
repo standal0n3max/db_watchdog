@@ -43,7 +43,7 @@ def coverage(data: Path | None = None, names: list[str] | None = None) -> dict[s
         "tasks": len(chosen),
         "passed": passed,
         "failed": len(failures),
-        "failures": failures[:30],
+        "failures": failures,
         "ok": len(failures) == 0 and len(chosen) > 0,
         "table_hashes": table_hashes(db) if db.is_file() else {},
     }
@@ -259,22 +259,24 @@ def _symbol_change(opened: graph_view.GraphView) -> tuple[str, str] | None:
 
 @beartype
 def _cochange_test(opened: graph_view.GraphView) -> str:
+    """Тест, который в видимом коммите менялся вместе с кодом, не больше 8 путей."""
     rows = opened.conn.execute(
-        "SELECT h.oid FROM windows w JOIN hunks h ON h.oid = w.oid WHERE w.base_oid = ? LIMIT 20",
-        (opened.base_sha,),
+        "SELECT f.oid FROM file_change f JOIN visible_oid v ON v.oid = f.oid "
+        "GROUP BY f.oid HAVING count(*) <= 8 "
+        "AND sum(CASE WHEN f.path LIKE '%.c' OR f.path LIKE '%.h' THEN 1 ELSE 0 END) > 0 "
+        "AND sum(CASE WHEN f.path LIKE '%.sql' OR f.path LIKE '%.out' OR f.path LIKE '%.spec' "
+        "THEN 1 ELSE 0 END) > 0 LIMIT 1"
     ).fetchall()
-    for item in rows:
-        oid = str(item[0])
-        if oid not in opened.visible:
-            continue
-        paths = [
-            str(path)
-            for (path,) in opened.conn.execute("SELECT path FROM file_change WHERE oid = ?", (oid,))
-        ]
-        tests = [path for path in paths if path.endswith((".sql", ".out"))]
-        code = [path for path in paths if path.endswith((".c", ".h"))]
-        if tests and code and len(paths) <= 8:
-            return tests[0]
+    if len(rows) == 0:
+        return ""
+    oid = str(rows[0][0])
+    paths = opened.conn.execute(
+        "SELECT path FROM file_change WHERE oid = ?", (oid,)
+    ).fetchall()
+    for (path,) in paths:
+        text = str(path)
+        if text.endswith((".sql", ".out", ".spec")):
+            return text
     return ""
 
 
