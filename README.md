@@ -165,7 +165,7 @@ data/                          в gitignore: клон, журнал, JSON, ло�
 - `data/runs/<instance_id>.json` — прогон;
 - `data/oracle/<sha>/` — логи сборки, «до» и «после»;
 - `data/benchmark/postgres/{tasks,oracle,prep}` — публичные задачи, приватные oracle и prep-патчи benchmark-прогона;
-- `data/graph/postgres.sqlite` — SQLite-индекс графа (union пяти баз);
+- `data/graph/graph.sqlite` — единый git-native граф всех баз задач;
 - `data/releases/<версия>/` — публичная выгрузка датасета (манифест, задачи, split, лицензии);
 - `data/reports/smoke-postgres.json` — сводный отчёт парного smoke;
 - `data/filter_sample.jsonl` — журнал фильтра на 20 изменениях;
@@ -268,8 +268,8 @@ uv run python -m db_pipeline.benchmark run <sha> --mode bare
 uv run python -m db_pipeline.benchmark run <sha> --mode graph
 uv run python -m db_pipeline.benchmark probe            # дешёвый E2E probe gateway и MCP
 uv run python -m db_pipeline.benchmark smoke            # парный smoke bare/graph на пяти задачах
-uv run python -m db_pipeline.benchmark graph-index      # индекс графа с отсечкой
-uv run python -m db_pipeline.benchmark graph-index --union --per-base 50
+uv run python -m db_pipeline.benchmark graph-build      # единый graph.sqlite по всем базам
+uv run python -m db_pipeline.benchmark graph-coverage   # гейт покрытия семи инструментов
 uv run python -m db_pipeline.benchmark release          # публичная выгрузка задач
 uv run python -m db_pipeline.benchmark release-verify --target <каталог>
 ```
@@ -300,13 +300,13 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 ### Граф кода
 
-Свой MCP-сервер с двумя слоями инструментов. Слой v1 работает по индексу из 250 последних коммитов: `find_code_symbols` (символы C-кода по имени до cutoff), `read_versioned_source` (реальный фрагмент файла на закреплённой ревизии с SHA-256 и byte span), `search_git_history` (сообщения коммитов, hunks и тела кода). Слой v2 работает по производному `history.sqlite` с полной цепочкой `parents`: `symbol_history` (как менялся один символ), `tests_to_code` (код, менявшийся вместе с тестом), `similar_fixes` (прошлые коммиты со схожим интентом), `find_error_origin` (где печатается строка ошибки). Описания v2 сформулированы по ситуации (когда инструмент нужен и когда его можно пропустить), а не по механике API.
+Свой MCP-сервер с семью инструментами поверх одного `graph.sqlite`. Отсечка — `GraphView(base_sha)`: предки базы минус `head_sha` и его потомки. `find_code_symbols`, `read_versioned_source` и `search_git_history` читают дерево базы и окно последних 50 предков; `symbol_history`, `tests_to_code`, `similar_fixes` и `find_error_origin` читают ту же отсечку, без отдельного `history.sqlite`. Co-change считается на запросе. Описания четырёх инструментов истории сформулированы по ситуации.
 
-Любая возвращаемая revision обязана быть предком `base_sha`; `head_sha` и его потомки не выдаются, нулевой результат пишется в audit log.
+Любая возвращаемая revision обязана быть в `visible`. Пустой ответ пишет `not_found` или `outside_cutoff`.
 
-Ручка прогона `graph` подключает оба слоя, `graph_v2` — абляция: три инструмента v1 выключаются картой `tools` в конфиге OpenCode, и у агента остаётся только слой истории. Парный прогон различает руки флагом `--ablation` (сравнение `graph` против `graph_v2` вместо `bare` против `graph`) и вариант абзаца промпта про историю — флагом `--prompt-variant` (`directive` против `situational`): набор инструментов и формулировка промпта меняются независимо, поэтому их эффекты разводятся. Оба параметра пишутся в manifest и в отчёт.
+Ручка прогона `graph` подключает все семь инструментов, `graph_v2` — абляция: три инструмента поиска по коду выключаются картой `tools` в конфиге OpenCode. Парный прогон различает руки флагом `--ablation` и вариант абзаца промпта — флагом `--prompt-variant` (`directive` против `situational`).
 
-Union-индекс строится по последним 50 предкам каждого из пяти `base_sha`, дельта коммитов дополняется снимком полного source-дерева каждой базы (иначе неизменившийся файл вроде `relnode.c` агенту недоступен). Индекс передаётся в graph-container копией SQLite, полный git-клон в контейнер не монтируется.
+Граф собирается `graph-build` по предкам всех баз. В контейнер уходит один файл через `docker cp`, полный git-клон не монтируется.
 
 ### Отчёт
 

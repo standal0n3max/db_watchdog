@@ -7,7 +7,7 @@
 - ``build`` — собрать образ задачи, graph и model-gateway;
 - ``run`` — один прогон задачи в заданном режиме (``bare`` или ``graph``);
 - ``smoke`` — парный smoke на пяти задачах: 5 ``bare`` и 5 ``graph``;
-- ``graph-index`` — построить локальный индекс графа или union-индекс пяти баз;
+- ``graph-build`` — собрать единый ``graph.sqlite`` по всем базам (инкрементально по oid);
 - ``release`` — публичная выгрузка задач со стабильными id, лицензиями и
   sha256-манифестом; ``release-verify`` — сверка распакованного релиза с манифестом.
 
@@ -306,25 +306,32 @@ def _smoke_names(values: list[str], data: Path | None) -> list[str]:
 
 
 @beartype
-def cmd_graph_index(args: argparse.Namespace) -> int:
-    from db_pipeline.benchmark.graph import index as graph_index
+def cmd_graph_build(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import gitgraph
 
     data = None if args.data is None else Path(args.data)
-    if args.union:
-        bases = _smoke_bases(data)
-        summary = graph_index.build_union_index(
-            data=data,
-            base_shas=bases,
-            per_base=args.per_base,
-        )
-    else:
-        summary = graph_index.build_index(
-            data=data,
-            limit=args.limit,
-            base_sha=args.base_sha,
-        )
+    bases = args.bases if len(args.bases) > 0 else None
+    try:
+        summary = gitgraph.build(data=data, bases=bases, fetch=args.fetch)
+    except PipelineError as exc:
+        print(json.dumps({"ok": False, "error": exc.reason}, ensure_ascii=False, indent=2))
+        return 1
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if summary.get("ok") else 1
+
+
+@beartype
+def cmd_graph_coverage(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import coverage as coverage_module
+
+    data = None if args.data is None else Path(args.data)
+    names = _task_names(args.tasks, data) if len(args.tasks) > 0 else None
+    report = coverage_module.coverage(data, names)
+    target = coverage_module.write_report(report, data)
+    summary = {key: report[key] for key in ("tasks", "passed", "failed", "ok")}
+    summary["report"] = str(target)
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if report.get("ok") else 1
 
 
 @beartype
@@ -363,21 +370,6 @@ def cmd_graph_leak_audit(args: argparse.Namespace) -> int:
 
 
 @beartype
-def cmd_graph_history(args: argparse.Namespace) -> int:
-    from db_pipeline.benchmark.graph import history
-
-    data = None if args.data is None else Path(args.data)
-    report = history.build(
-        data=data,
-        rebuild=not args.no_rebuild,
-        index_errors=not args.no_errors,
-        base_shas=args.bases,
-    )
-    print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
-    return 0
-
-
-@beartype
 def cmd_graph_canary(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark.graph import canary, split as split_module
 
@@ -385,11 +377,7 @@ def cmd_graph_canary(args: argparse.Namespace) -> int:
     names = _task_names(args.tasks, data)
     if len(args.tasks) == 0:
         names = split_module.derive_split(data)["dev"]
-    layer = args.layer
-    reports = [
-        canary.run_task(name, data, with_history=layer in ("auto", "v2"))
-        for name in names
-    ]
+    reports = [canary.run_task(name, data) for name in names]
     target = paths.reports_dir(data) / "graph-canary.json"
     target.write_text(json.dumps(reports, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(reports, ensure_ascii=False, indent=2))
@@ -565,15 +553,6 @@ def cmd_release_verify(args: argparse.Namespace) -> int:
 
 
 @beartype
-def _smoke_bases(data: Path | None) -> list[str]:
-    bases: list[str] = []
-    for name in (f"postgres__{item}" for item in SMOKE_TASKS):
-        oracle = convert.load_oracle(name, data)
-        bases.append(str(oracle["base"]))
-    return bases
-
-
-@beartype
 def _task_names(values: list[str], data: Path | None) -> list[str]:
     if len(values) == 0:
         available = sorted(path.stem for path in paths.tasks_dir(data).glob("*.json"))
@@ -625,14 +604,18 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument("--name", default="", help="функция контрольной задачи")
     probe_parser.set_defaults(handler=cmd_probe)
 
-    graph_parser = sub.add_parser("graph-index", help="построить локальный индекс графа")
-    graph_parser.add_argument("--limit", type=int, default=2000)
-    graph_parser.add_argument("--base-sha", default="")
-    graph_parser.add_argument(
-        "--union", action="store_true", help="union-индекс последних предков пяти base_sha"
+    graph_build = sub.add_parser(
+        "graph-build", help="собрать единый graph.sqlite по базам задач"
     )
-    graph_parser.add_argument("--per-base", type=int, default=50)
-    graph_parser.set_defaults(handler=cmd_graph_index)
+    graph_build.add_argument("--fetch", action="store_true", help="git fetch origin master")
+    graph_build.add_argument("--bases", nargs="*", default=[], help="явные base sha")
+    graph_build.set_defaults(handler=cmd_graph_build)
+
+    coverage_parser = sub.add_parser(
+        "graph-coverage", help="гейт покрытия графа: структура и 7 инструментов"
+    )
+    coverage_parser.add_argument("tasks", nargs="*", help="ограничить задачи")
+    coverage_parser.set_defaults(handler=cmd_graph_coverage)
 
     split_parser = sub.add_parser(
         "graph-split", help="разбить задачи на dev/tune/holdout и заморозить holdout"
@@ -650,23 +633,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     leak_parser.set_defaults(handler=cmd_graph_leak_audit)
 
-    history_parser = sub.add_parser(
-        "graph-history", help="собрать производный history.sqlite из данных PRISM"
-    )
-    history_parser.add_argument(
-        "--no-rebuild", action="store_true", help="докидывать записи, не очищая таблицы"
-    )
-    history_parser.add_argument(
-        "--no-errors", action="store_true", help="не индексировать шаблоны errmsg"
-    )
-    history_parser.add_argument("--bases", nargs="*", default=None, help="base_sha для errmsg")
-    history_parser.set_defaults(handler=cmd_graph_history)
-
     canary_parser = sub.add_parser(
         "graph-canary", help="прогон канареек и membership по инструментам графа"
-    )
-    canary_parser.add_argument(
-        "--layer", default="auto", choices=("auto", "v1", "v2"), help="слой инструментов"
     )
     canary_parser.add_argument("tasks", nargs="*", help="имена задач (по умолчанию dev)")
     canary_parser.set_defaults(handler=cmd_graph_canary)

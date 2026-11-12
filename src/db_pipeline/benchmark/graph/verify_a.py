@@ -31,8 +31,9 @@ from typing import cast
 from beartype import beartype
 
 from db_pipeline.benchmark import convert, paths
-from db_pipeline.benchmark.graph import index as index_module
 from db_pipeline.benchmark.graph import prism
+from db_pipeline.benchmark.graph.gitgraph import list_tree
+from db_pipeline.benchmark.graph.symbols import scan_symbols
 
 SMOKE_TASKS = (
     "d764d61af316",
@@ -414,7 +415,7 @@ def _recall(exact_path: Path, repo: Path, bases: list[BaseInfo]) -> dict[str, ob
         for item in bases:
             entries = [
                 entry
-                for entry in index_module.list_tree(repo, item.base)
+                for entry in list_tree(repo, item.base)
                 if entry.path.endswith((".c", ".h")) and entry.kind == "blob"
             ]
             sample = entries[:60]
@@ -423,7 +424,7 @@ def _recall(exact_path: Path, repo: Path, bases: list[BaseInfo]) -> dict[str, ob
             for entry in sample:
                 raw = _git_bytes(repo, "cat-file", "blob", entry.blob_sha)
                 text = raw.decode("utf-8", "replace")
-                for symbol in index_module.scan_symbols(entry.path, text.splitlines()):
+                for symbol in scan_symbols(entry.path, text.splitlines()):
                     ours.add(symbol.name)
                 rows = conn.execute(
                     "SELECT name FROM symbols WHERE blob_oid = ?", (entry.blob_sha,)

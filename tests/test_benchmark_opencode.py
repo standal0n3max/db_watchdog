@@ -11,7 +11,7 @@ import unittest
 from typing import cast
 
 from db_pipeline.benchmark import opencode
-from db_pipeline.benchmark.graph import index as graph_index
+from db_pipeline.benchmark.graph.symbols import is_source
 
 
 class OpenCodeConfigTests(unittest.TestCase):
@@ -117,11 +117,11 @@ class McpCallDetectionTests(unittest.TestCase):
 
 class IndexParseTests(unittest.TestCase):
     def test_is_source_filters(self) -> None:
-        self.assertTrue(graph_index.is_source("src/backend/x.c", "100644", "blob"))
-        self.assertTrue(graph_index.is_source("contrib/h.c", "100644", "blob"))
-        self.assertFalse(graph_index.is_source("README.md", "100644", "blob"))
-        self.assertFalse(graph_index.is_source("src/backend/x.c", "120000", "blob"))
-        self.assertFalse(graph_index.is_source("src/backend", "040000", "tree"))
+        self.assertTrue(is_source("src/backend/x.c", "100644", "blob"))
+        self.assertTrue(is_source("contrib/h.c", "100644", "blob"))
+        self.assertFalse(is_source("README.md", "100644", "blob"))
+        self.assertFalse(is_source("src/backend/x.c", "120000", "blob"))
+        self.assertFalse(is_source("src/backend", "040000", "tree"))
 
 
 if __name__ == "__main__":

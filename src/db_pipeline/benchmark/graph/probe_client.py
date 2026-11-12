@@ -15,59 +15,56 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from beartype import beartype
 
-from db_pipeline.benchmark.graph import store
+from db_pipeline.benchmark.graph import view as graph_view
 
 if TYPE_CHECKING:
     from mcp import ClientSession
 
-EXPECTED_TOOLS = ["find_code_symbols", "read_versioned_source", "search_git_history"]
-EXPECTED_TOOLS_V2 = [
+EXPECTED_TOOLS = [
     "find_code_symbols",
+    "find_error_origin",
     "read_versioned_source",
     "search_git_history",
+    "similar_fixes",
     "symbol_history",
     "tests_to_code",
-    "similar_fixes",
-    "find_error_origin",
 ]
-# ``list_tools`` возвращает имена отсортированными, поэтому сравниваем именно с
-# сортированным списком: иначе проверка падала бы на порядке, а не на составе.
-EXPECTED_TOOLS_V2_SORTED = sorted(EXPECTED_TOOLS_V2)
 
 
 @beartype
 def _first_symbol(db: Path, revision: str) -> str:
-    with closing(store.open_store(db)) as conn:
-        row = conn.execute(
-            "SELECT name FROM symbols WHERE revision = ? LIMIT 1", (revision,)
+    opened = graph_view.open_view(db, revision, "")
+    try:
+        row = opened.conn.execute(
+            "SELECT s.name FROM symbols s JOIN tree_entries t "
+            "ON t.blob_oid = s.blob_oid AND t.path = s.path "
+            "WHERE t.commit_oid = ? LIMIT 1",
+            (revision,),
         ).fetchone()
-        if row is None:
-            row = conn.execute("SELECT name FROM symbols LIMIT 1").fetchone()
-    return "" if row is None else str(row["name"])
+    finally:
+        graph_view.close_view(opened)
+    return "" if row is None else str(row[0])
 
 
 @beartype
 def _first_revision_path(db: Path, revision: str) -> tuple[str, str]:
-    """Возвращает (revision, path) с реальной ревизией C-файла в индексе."""
-    with closing(store.open_store(db)) as conn:
-        row = conn.execute(
-            "SELECT commit_sha, path FROM revisions WHERE path LIKE 'src/%.c' "
-            "AND commit_sha = ? LIMIT 1",
+    """Возвращает (revision, path) файла ``.c`` в дереве базы."""
+    opened = graph_view.open_view(db, revision, "")
+    try:
+        row = opened.conn.execute(
+            "SELECT path FROM tree_entries WHERE commit_oid = ? AND path LIKE '%.c' LIMIT 1",
             (revision,),
         ).fetchone()
-        if row is None:
-            row = conn.execute(
-                "SELECT commit_sha, path FROM revisions WHERE path LIKE 'src/%.c' LIMIT 1"
-            ).fetchone()
+    finally:
+        graph_view.close_view(opened)
     if row is None:
         return revision, ""
-    return str(row["commit_sha"]), str(row["path"])
+    return revision, str(row[0])
 
 
 @beartype
@@ -138,23 +135,18 @@ async def run_probe(url: str, db: Path, base_sha: str, head_sha: str) -> dict[st
                 {"revision": head_sha, "path": path or "src/backend/x.c"},
             )
             report["head_refusal"] = _text(refused)
-    v2_ok = True
-    if "symbol_history" in tool_names:
-        v2_ok = all(
-            "results" in str(report.get(name))
-            for name in (
-                "symbol_history",
-                "tests_to_code",
-                "similar_fixes",
-                "find_error_origin",
-            )
-        )
     report["ok"] = (
-        v2_ok
-        and tool_names in (EXPECTED_TOOLS, EXPECTED_TOOLS_V2_SORTED)
+        tool_names == EXPECTED_TOOLS
+        and all(name in tool_names for name in EXPECTED_TOOLS)
         and "results" in str(report.get("find_code_symbols"))
         and "content" in str(report.get("read_versioned_source"))
         and "cutoff" in str(report.get("head_refusal"))
+        and all("results" in str(report.get(name)) for name in (
+            "symbol_history",
+            "tests_to_code",
+            "similar_fixes",
+            "find_error_origin",
+        ))
     )
     return report
 
