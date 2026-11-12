@@ -44,7 +44,7 @@ _LINK_CACHE: dict[str, tuple[dict[str, list[str]], dict[str, list[str]]]] = {}
 @beartype
 def open_view(db: Path, base_sha: str, head_sha: str = "") -> GraphView:
     """Строит отсечку один раз. База после сборки уже без WAL."""
-    conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True)
+    conn = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     parents, children = _cached_links(db, conn)
     ancestors = _walk(base_sha, parents)
