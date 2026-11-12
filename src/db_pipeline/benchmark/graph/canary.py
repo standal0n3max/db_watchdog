@@ -23,23 +23,16 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 import sys
-from contextlib import closing
 from pathlib import Path
 from typing import cast
 
 from beartype import beartype
 
 from db_pipeline.benchmark import paths
-from db_pipeline.benchmark.graph import (
-    cutoff as cutoff_module,
-    history_store,
-    history_tools,
-    leakguard,
-    store,
-    tools,
-)
+from db_pipeline.benchmark.graph import leakguard
+from db_pipeline.benchmark.graph import view as graph_view
+from db_pipeline.benchmark.graph.gitgraph import graph_db
 
 # Имя функции C-кода перед открывающей скобкой.
 _FUNC_RE = re.compile(r"\b([A-Za-z_]\w{3,})\s*\(")
@@ -47,8 +40,15 @@ _FUNC_RE = re.compile(r"\b([A-Za-z_]\w{3,})\s*\(")
 # Тестовые пути в патче: expected/*.out и sql/*.sql.
 _TEST_PATH_RE = re.compile(r"b/(\S+\.(?:out|sql|spec))")
 
-# Инструменты, доступные только при подключённой производной истории.
-_V2_TOOLS = ("symbol_history", "tests_to_code", "similar_fixes", "find_error_origin")
+# Инструменты единого графа.
+_ALL_TOOLS = (
+    "find_code_symbols",
+    "symbol_history",
+    "similar_fixes",
+    "tests_to_code",
+    "find_error_origin",
+    "search_git_history",
+)
 
 # Фразы, характерные для вывода регрессионных тестов.
 _ERROR_MARKERS = ("ERROR", "FATAL", "does not exist", "could not", "must be")
@@ -96,120 +96,72 @@ def expected_messages(test_patch: str) -> list[str]:
 
 
 @beartype
-def _ancestors(repo: Path, base: str) -> set[str]:
-    """Все предки ``base_sha`` по клону: список законных ревизий."""
-    import subprocess
-
-    result = subprocess.run(
-        ["git", "-C", str(repo), "rev-list", base],
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    return set(result.stdout.split())
-
-
-@beartype
-def _history_ready(path: Path) -> bool:
-    """Совместимый алиас: готовность производной истории."""
-    return history_store.history_ready(path)
-
-
-@beartype
-def run_task(
-    name: str,
-    data: Path | None = None,
-    with_history: bool = True,
-) -> dict[str, object]:
-    """Прогоняет канарейки по одной задаче на реальных индексах."""
+def run_task(name: str, data: Path | None = None, with_history: bool = True) -> dict[str, object]:
+    """Прогоняет канарейки и негативный контроль по ``GraphView`` задачи."""
+    del with_history
     repo = paths.pg_clone(data)
     task = leakguard.load_task(name, data)
     canary_list = leakguard.canaries(task, repo)
-    ancestors = _ancestors(repo, task.base)
-    db = paths.graph_dir(data) / "postgres.sqlite"
-    history_db = db.parent / "history.sqlite"
+    db = graph_db(data)
+    opened = graph_view.open_view(db, task.base, task.head)
     responses: dict[str, str] = {}
-    index_open = with_history and history_store.history_ready(history_db)
-    with closing(store.open_store(db)) as conn:
-        base_time = store.commit_time(conn, task.base) or 0
-        reachable = store.ancestors(conn, task.base)
-        reachable.add(task.base)
-        cutoff = cutoff_module.build_cutoff(
-            task.base, base_time, reachable, forbidden_head=task.head
+    try:
+        for tool, args in canary_queries(task):
+            if tool not in _ALL_TOOLS and tool != "search_git_history":
+                continue
+            responses[tool] = _call(opened, tool, args)
+        head_text = graph_view.read_versioned_source(
+            opened, task.head, task.paths_touched[0] if task.paths_touched else "src/backend/x.c"
         )
-        # v2-инструменты обязаны видеть полную историю, иначе канарейки
-        # проверялись бы на пустых ответах и ничего не доказывали.
-        cutoff_v2 = (
-            history_tools.cutoff_for_base(history_db, task.base, forbidden_head=task.head)
-            if index_open
-            else cutoff
-        )
-        index = (
-            history_tools.open_index(history_db, db, cutoff_v2) if index_open else None
-        )
-        try:
-            for tool, args in canary_queries(task):
-                if index is None and tool in _V2_TOOLS:
-                    continue
-                responses[tool] = _call(conn, index, cutoff, tool, args)
-        finally:
-            if index is not None:
-                history_tools.close_index(index)
+        responses["negative_head"] = json.dumps(head_text, ensure_ascii=False)
+    finally:
+        graph_view.close_view(opened)
+    ancestors = set(opened.visible)
+    ancestors.add(task.base)
     violations = leakguard.scan_responses(responses, canary_list, task.head)
     membership = leakguard.check_membership(responses, ancestors)
-    # Пустой ответ не доказывает изоляцию: канарейка просто не могла попасть.
-    # Поэтому фиксируем, какие инструменты вернули данные.
     nonempty = sorted(
         tool
         for tool, text in responses.items()
         if '"results": []' not in text and '"error"' not in text
     )
+    negative_ok = "outside_cutoff" in responses.get("negative_head", "")
+    if not negative_ok:
+        violations.append("head_sha не отклонён")
     return {
         "task": name,
-        "layer": "v2" if index_open else "v1",
+        "layer": "git",
         "canaries": len(canary_list),
         "calls": sorted(responses),
         "nonempty_calls": nonempty,
         "empty_calls": sorted(set(responses) - set(nonempty)),
         "canary_violations": violations,
         "membership_violations": membership,
-        "ok": len(violations) == 0 and len(membership) == 0,
+        "ok": len(violations) == 0 and len(membership) == 0 and negative_ok,
     }
 
 
 @beartype
-def _call(
-    conn: sqlite3.Connection,
-    index: history_tools.HistoryIndex | None,
-    cutoff: cutoff_module.Cutoff,
-    tool: str,
-    args: dict[str, object],
-) -> str:
+def _call(opened: graph_view.GraphView, tool: str, args: dict[str, object]) -> str:
     """Вызывает инструмент и возвращает его ответ как JSON-текст."""
     if tool == "find_code_symbols":
-        payload = tools.find_code_symbols(conn, cutoff, str(args["name"]))
+        payload = graph_view.find_code_symbols(opened, str(args["name"]))
     elif tool == "search_git_history":
-        payload = tools.search_git_history(
-            conn, cutoff, str(args["query"]), int(cast("int", args["limit"]))
+        payload = graph_view.search_git_history(
+            opened, str(args["query"]), int(cast("int", args.get("limit", 5)))
         )
-    elif index is None:
-        return ""
+    elif tool == "symbol_history":
+        payload = graph_view.symbol_history(opened, str(args["path"]), str(args["name"]))
+    elif tool == "tests_to_code":
+        payload = graph_view.tests_to_code(opened, str(args["test"]))
+    elif tool == "similar_fixes":
+        payload = graph_view.similar_fixes(
+            opened, str(args["query"]), int(cast("int", args.get("limit", 5)))
+        )
+    elif tool == "find_error_origin":
+        payload = graph_view.find_error_origin(opened, str(args["message"]))
     else:
-        if tool == "symbol_history":
-            payload = history_tools.symbol_history(
-                index, str(args["path"]), str(args["name"])
-            )
-        elif tool == "tests_to_code":
-            payload = history_tools.tests_to_code(index, str(args["test"]))
-        elif tool == "similar_fixes":
-            payload = history_tools.similar_fixes(
-                index, str(args["query"]), int(cast("int", args["limit"]))
-            )
-        elif tool == "find_error_origin":
-            payload = history_tools.find_error_origin(index, str(args["message"]))
-        else:
-            return ""
+        return ""
     return json.dumps(payload, ensure_ascii=False)
 
 

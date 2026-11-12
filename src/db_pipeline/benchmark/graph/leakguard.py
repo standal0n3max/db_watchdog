@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,7 +34,7 @@ from typing import cast
 from beartype import beartype
 
 from db_pipeline.benchmark import paths
-from db_pipeline.benchmark.graph import history_store, prism, split as split_module
+from db_pipeline.benchmark.graph import split as split_module
 
 # Порог совпадения нетривиальных добавленных строк для prior-twin.
 PRIOR_TWIN_THRESHOLD = 0.8
@@ -242,36 +243,73 @@ def _grep_in_tree(repo: Path, sha: str, lines: list[str]) -> set[str]:
 
 
 @beartype
-def _history_db(data: Path | None = None) -> Path:
-    return paths.graph_dir(data) / "history.sqlite"
+def _graph_db(data: Path | None = None) -> Path:
+    return paths.graph_dir(data) / "graph.sqlite"
 
 
-# Кэш аудита: 280 задач читали бы одну и ту же таблицу 105k строк каждая.
+@beartype
+def _open_graph(data: Path | None = None) -> sqlite3.Connection | None:
+    path = _graph_db(data)
+    if not path.is_file():
+        return None
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# Кэш аудита: сотни задач читали бы одну и ту же таблицу родителей.
 _ANCESTORS_CACHE: dict[str, frozenset[str]] = {}
-_PARENTS_MAP_CACHE: dict[str, dict[str, list[str]]] = {}
 _PATCH_ID_CACHE: dict[str, dict[str, str]] = {}
+_PARENTS_CACHE: dict[str, dict[str, list[str]]] = {}
+
+
+@beartype
+def _parent_map(data: Path | None = None) -> dict[str, list[str]]:
+    key = str(_graph_db(data))
+    cached = _PARENTS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    conn = _open_graph(data)
+    parents: dict[str, list[str]] = {}
+    if conn is None:
+        _PARENTS_CACHE[key] = parents
+        return parents
+    try:
+        for row in conn.execute("SELECT oid, parent_oid FROM parents"):
+            parents.setdefault(str(row[0]), []).append(str(row[1]))
+    finally:
+        conn.close()
+    _PARENTS_CACHE[key] = parents
+    return parents
 
 
 @beartype
 def _ancestors(repo: Path, base: str, data: Path | None = None) -> set[str]:
-    """Предки ``base``: сначала по ``history.sqlite``, затем по клону.
-
-    Цепочка ``parents`` в производной истории — те же данные PRISM, что и
-    ``git rev-list``, но читаются из SQLite за секунды: аудит holdout делает это
-    для 280 баз, и на каждый вызов дёргать git с 62k коммитов слишком дорого.
-    Клон остаётся fallback'ом для баз, которых в PRISM нет.
-    """
-    history_db = _history_db(data)
-    if history_store.history_ready(history_db):
-        conn = history_store.open_history_readonly(history_db)
+    """Предки ``base`` по ``parents`` графа, иначе ``git rev-list``."""
+    conn = _open_graph(data)
+    if conn is not None:
         try:
-            reachable = history_store.ancestors(conn, base)
+            present = conn.execute("SELECT 1 FROM commits WHERE oid = ?", (base,)).fetchone()
         finally:
             conn.close()
-        if reachable:
-            return reachable
+        if present is not None:
+            return _ancestors_in_graph(base, data)
     output = _run_git(["git", "-C", str(repo), "rev-list", base])
     return set(output.split())
+
+
+@beartype
+def _ancestors_in_graph(base: str, data: Path | None = None) -> set[str]:
+    parents = _parent_map(data)
+    seen: set[str] = set()
+    stack = [base]
+    while stack:
+        oid = stack.pop()
+        if oid in seen:
+            continue
+        seen.add(oid)
+        stack.extend(parents.get(oid, []))
+    return seen
 
 
 @beartype
@@ -287,22 +325,19 @@ def _reachable(repo: Path, base: str, data: Path | None = None) -> frozenset[str
 
 @beartype
 def _patch_ids(data: Path | None = None) -> dict[str, str]:
-    """``oid → patch_id``: из ``history.sqlite`` (быстро) или корпуса PRISM."""
-    history_db = _history_db(data)
-    key = str(history_db)
+    """``oid → patch_id`` из ``commits`` единого графа."""
+    key = str(_graph_db(data))
     cached = _PATCH_ID_CACHE.get(key)
     if cached is not None:
         return cached
     found: dict[str, str] = {}
-    if history_store.history_ready(history_db):
-        conn = history_store.open_history_readonly(history_db)
+    conn = _open_graph(data)
+    if conn is not None:
         try:
             for row in conn.execute("SELECT oid, patch_id FROM commits WHERE patch_id != ''"):
                 found[str(row["oid"])] = str(row["patch_id"])
         finally:
             conn.close()
-    if not found:
-        found = _corpus_patch_ids(prism.load_archive())
     _PATCH_ID_CACHE[key] = found
     return found
 
@@ -311,18 +346,17 @@ def _patch_ids(data: Path | None = None) -> dict[str, str]:
 def prior_twin(
     task: TaskRef,
     repo: Path,
-    archive: prism.PrismArchive | None = None,
+    archive: object | None = None,
     threshold: float = PRIOR_TWIN_THRESHOLD,
     data: Path | None = None,
 ) -> dict[str, object]:
     """Ищет повторное применение эталона среди предков ``base``.
 
-    Быстрый путь — точное совпадение ``patch_id``. Медленный — доля совпавших
-    нетривиальных добавленных строк у ближайших предков, тронувших те же пути.
-    Обе структуры берутся из ``history.sqlite`` (кэш + один ``git show`` на
-    пачку кандидатов), чтобы аудит 280 задач не читал корпус PRISM и не звал
-    git по разу на кандидата.
+    Быстрый путь — точное совпадение ``patch_id`` в ``commits``. Медленный —
+    доля совпавших нетривиальных добавленных строк у предков, тронувших те же
+    пути (``file_change``).
     """
+    del archive
     target_id = task_patch_id(task, repo)
     evidence: list[str] = []
     ancestors = _reachable(repo, task.base, data)
@@ -355,9 +389,7 @@ def prior_twin(
             "patch_id": target_id,
             "evidence": [],
         }
-    candidates = _path_candidates(
-        prism.load_archive() if archive is None else archive, task, ancestors, data
-    )
+    candidates = _path_candidates(task, ancestors, data)
     shown_by_commit = added_lines_many(repo, candidates)
     for oid in candidates:
         shown = shown_by_commit.get(oid, set())
@@ -419,55 +451,21 @@ def added_lines_many(repo: Path, oids: list[str]) -> dict[str, set[str]]:
 
 
 @beartype
-def _corpus_patch_ids(archive: prism.PrismArchive) -> dict[str, str]:
-    """Карта ``oid → patch_id`` из корпуса PRISM (или пустая без архива)."""
-    if not archive.git_corpus.is_file():
-        return {}
-    conn = prism.open_readonly(archive.git_corpus)
-    try:
-        found: dict[str, str] = {}
-        for row in conn.execute("SELECT oid, patch_id FROM commits WHERE patch_id IS NOT NULL"):
-            found[str(row["oid"])] = str(row["patch_id"])
-        return found
-    finally:
-        conn.close()
-
-
-@beartype
 def _path_candidates(
-    archive: prism.PrismArchive,
     task: TaskRef,
     ancestors: set[str] | frozenset[str],
     data: Path | None = None,
 ) -> list[str]:
-    """Ближайшие предки, менявшие те же пути.
-
-    Пути берутся из ``path_commits`` производной истории: это те же данные
-    PRISM (``changed_paths``), но без чтения 445k строк корпуса на каждую задачу.
-    """
+    """Ближайшие предки, менявшие те же пути, по ``file_change``."""
     if not task.paths_touched:
         return []
-    history_db = _history_db(data)
-    if history_store.history_ready(history_db):
-        conn = history_store.open_history_readonly(history_db)
-        try:
-            placeholders = ",".join("?" for _ in task.paths_touched)
-            rows = conn.execute(
-                f"SELECT DISTINCT oid FROM path_commits WHERE path IN ({placeholders})",
-                list(task.paths_touched),
-            ).fetchall()
-        finally:
-            conn.close()
-        return [str(row["oid"]) for row in rows if str(row["oid"]) in ancestors][
-            :PRIOR_TWIN_CANDIDATES
-        ]
-    if not archive.git_corpus.is_file():
+    conn = _open_graph(data)
+    if conn is None:
         return []
-    conn = prism.open_readonly(archive.git_corpus)
     try:
         placeholders = ",".join("?" for _ in task.paths_touched)
         rows = conn.execute(
-            f"SELECT DISTINCT oid FROM changed_paths WHERE path IN ({placeholders})",
+            f"SELECT DISTINCT oid FROM file_change WHERE path IN ({placeholders})",
             list(task.paths_touched),
         ).fetchall()
     finally:
@@ -600,23 +598,25 @@ def audit_task(
 
 @beartype
 def prism_coverage(names: list[str], data: Path | None = None) -> dict[str, object]:
-    """Покрытие баз задач снимком PRISM: от него зависит полезность v2.
+    """Какие базы задач есть в ``graph.sqlite``.
 
-    ``history.sqlite`` собран из корпуса PRISM, снимок которого старше части
-    задач. У непокрытой базы ``parents`` пуст, и «инструменты истории» могут
-    ответить только по записям, случайно совпавшим по путям. Такие задачи надо
-    считать отдельной стратой, иначе средний эффект v2 смещается вниз.
+    Имя функции сохранено: отчёт eval читает ключ ``prism_missing_tasks``.
+    Пустой граф помечает все задачи как непокрытые.
     """
-    history_db = _history_db(data)
-    if not history_store.history_ready(history_db):
-        return {"covered": 0, "missing": len(names), "covered_tasks": [], "missing_tasks": sorted(names)}
-    conn = history_store.open_history_readonly(history_db)
+    conn = _open_graph(data)
+    if conn is None:
+        return {
+            "covered": 0,
+            "missing": len(names),
+            "covered_tasks": [],
+            "missing_tasks": sorted(names),
+        }
     covered: list[str] = []
     missing: list[str] = []
     try:
         for name in names:
             base = load_task(name, data).base
-            row = conn.execute("SELECT 1 FROM parents WHERE oid = ? LIMIT 1", (base,)).fetchone()
+            row = conn.execute("SELECT 1 FROM commits WHERE oid = ? LIMIT 1", (base,)).fetchone()
             (covered if row is not None else missing).append(name)
     finally:
         conn.close()
