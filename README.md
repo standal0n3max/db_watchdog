@@ -4,9 +4,9 @@
 
 **Harvesting — `python -m db_pipeline`.** Сборщик задач по ядру СУБД: он готовит экземпляры, которые позже кладутся в pg-gym. Стадии Airflow, журнал, фильтр, оракул и обход истории описаны ниже.
 
-**Benchmark — `python -m db_pipeline.benchmark`.** Изолированный прогон агента на одной PostgreSQL-задаче и парный smoke `bare`/`graph`. Поведение перенесено из commit-suite pg-gym, но реализовано своим кодом: одноразовый контейнер без bind mounts, скрытые тесты, оборванная история, gates, verdict, модель через свой model-gateway, трасса Langfuse v4 и свой граф кода по MCP. Harvesting CLI при этом не меняется — прогоны и сборка живут в одном пакете, но не мешают друг другу.
+**Benchmark — `python -m db_pipeline.benchmark`.** Изолированный прогон агента на одной PostgreSQL-задаче и парный прогон `bare`/`graph`. Поведение перенесено из commit-suite pg-gym, но реализовано своим кодом: одноразовый контейнер без bind mounts, скрытые тесты, оборванная история, gates, verdict, модель через свой model-gateway, трасса Langfuse v4 и один git-native граф `graph.sqlite` по MCP. Harvesting CLI при этом не меняется — прогоны и сборка живут в одном пакете, но не мешают друг другу.
 
-Текущее состояние — локальный checkpoint на ветке `feat/postgres-isolated-runner`. Парный smoke пяти задач ещё не завершён; фактический отчёт по последнему прогону лежит в [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
+Текущее состояние — ветка `feat/git-native-graph`. Датасет benchmark — 299 задач, чья база является предком `origin/master`; `postgres__04c25af21c02` вынесена в `data/archive/excluded/`. Split перезаморожен: dev 5, tune 15, holdout 279, `holdout_sha256` `482fe7e8992835c3173a0e226ae364a2f348a85074634579229575c19a8a4436`. Граф один, `data/graph/graph.sqlite`: `graph-coverage` прошёл 299/299, leak-guard и canary без нарушений на dev, tune и holdout. Интеграционный smoke пяти dev-задач подтвердил, что MCP отвечает и `head_sha` отклоняется. Сравнительный прогон `bare` против `graph` этим планом не запускался. Отчёт прежнего парного smoke на старом индексе — [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
 
 Включены три ядра: DuckDB, PostgreSQL и SQLite. У каждого свой DAG и свой образ инструментов.
 
@@ -18,7 +18,7 @@
 
 У benchmark-прогона свои образы: `docker/task.Dockerfile` (toolchain PostgreSQL + OpenCode 1.18.20), `docker/graph.Dockerfile` (MCP-сервер графа) и `docker/model-gateway/Dockerfile` (единственная точка с ключом OpenRouter). Ключ модели в task-образ не попадает.
 
-План DuckDB: [plans/2026-10-10_mvp_пайплайн_duckdb.md](../plans/2026-10-10_mvp_пайплайн_duckdb.md). План PostgreSQL и SQLite: [plans/2026-10-10_postgres_sqlite_пайплайн.md](../plans/2026-10-10_postgres_sqlite_пайплайн.md). Сбор новых SQL-коммитов: [plans/2026-10-18_сбор_новых_sql_коммитов.md](../plans/2026-10-18_сбор_новых_sql_коммитов.md). Сбор коммитов ядра: [plans/2026-10-19_сбор_коммитов_ядра.md](../plans/2026-10-19_сбор_коммитов_ядра.md). Парный smoke пяти задач: [plans/2026-11-10_парный_smoke_пяти_задач.md](../plans/2026-11-10_парный_smoke_пяти_задач.md).
+План DuckDB: [plans/2026-10-10_mvp_пайплайн_duckdb.md](../plans/2026-10-10_mvp_пайплайн_duckdb.md). План PostgreSQL и SQLite: [plans/2026-10-10_postgres_sqlite_пайплайн.md](../plans/2026-10-10_postgres_sqlite_пайплайн.md). Сбор новых SQL-коммитов: [plans/2026-10-18_сбор_новых_sql_коммитов.md](../plans/2026-10-18_сбор_новых_sql_коммитов.md). Сбор коммитов ядра: [plans/2026-10-19_сбор_коммитов_ядра.md](../plans/2026-10-19_сбор_коммитов_ядра.md). Парный smoke пяти задач: [plans/2026-11-10_парный_smoke_пяти_задач.md](../plans/2026-11-10_парный_smoke_пяти_задач.md). Полное покрытие графа: [plans/2026-11-12_полное_покрытие_графа.md](../plans/2026-11-12_полное_покрытие_графа.md).
 
 ## Что делает цепочка
 
@@ -149,7 +149,7 @@ prompts/opencode.json          температура 0 и 50 шагов, клю
 src/db_pipeline/               стадии harvesting и модель экземпляра
 src/db_pipeline/environment.py загрузка корневого .env на границе CLI
 src/db_pipeline/benchmark/     benchmark: конвертер, runner, session, probe, opencode, telemetry
-src/db_pipeline/benchmark/graph/ индекс, store, cutoff, MCP-сервер и probe-клиент
+src/db_pipeline/benchmark/graph/ gitgraph, symbols, view, server, coverage, leakguard, canary, split
 docs/                          протокол, изоляция, Langfuse, граф, smoke, выгрузка, происхождение, отчёт факта
 tests/                         фильтр, разрез патча, журнал, конвертер, граф, изоляция, окружение
 constraints/                   constraints Airflow 2.11 для Python 3.11
@@ -165,8 +165,11 @@ data/                          в gitignore: клон, журнал, JSON, ло�
 - `data/runs/<instance_id>.json` — прогон;
 - `data/oracle/<sha>/` — логи сборки, «до» и «после»;
 - `data/benchmark/postgres/{tasks,oracle,prep}` — публичные задачи, приватные oracle и prep-патчи benchmark-прогона;
-- `data/graph/graph.sqlite` — единый git-native граф всех баз задач;
+- `data/graph/graph.sqlite` — единый git-native граф всех 299 баз задач;
+- `data/archive/excluded/` — задача вне `origin/master`;
+- `data/archive/graph-v1v2/` — прежние `postgres.sqlite` и `history.sqlite`;
 - `data/releases/<версия>/` — публичная выгрузка датасета (манифест, задачи, split, лицензии);
+- `data/reports/graph-coverage.json` — гейт покрытия семи инструментов;
 - `data/reports/smoke-postgres.json` — сводный отчёт парного smoke;
 - `data/filter_sample.jsonl` — журнал фильтра на 20 изменениях;
 - `data/decisions.md` — фактические команды и ошибки среды;
@@ -270,6 +273,9 @@ uv run python -m db_pipeline.benchmark probe            # дешёвый E2E pro
 uv run python -m db_pipeline.benchmark smoke            # парный smoke bare/graph на пяти задачах
 uv run python -m db_pipeline.benchmark graph-build      # единый graph.sqlite по всем базам
 uv run python -m db_pipeline.benchmark graph-coverage   # гейт покрытия семи инструментов
+uv run python -m db_pipeline.benchmark graph-split      # dev/tune/holdout, --freeze пишет holdout
+uv run python -m db_pipeline.benchmark graph-leak-audit # membership, prior-twin, канарейки
+uv run python -m db_pipeline.benchmark graph-canary     # канарейки и отказ по head_sha
 uv run python -m db_pipeline.benchmark release          # публичная выгрузка задач
 uv run python -m db_pipeline.benchmark release-verify --target <каталог>
 ```
@@ -278,7 +284,7 @@ uv run python -m db_pipeline.benchmark release-verify --target <каталог>
 
 ### Публичная выгрузка датасета
 
-Команда `release` собирает публичный слой датасета в `data/releases/<версия>` (каталог в `data/`, в git не попадает). Это ответ на требование трека Datasets and Benchmarks по доступности: 300 задач PostgreSQL выкладываются со стабильными `id`, лицензиями, `split.json` и sha256-манифестом. Наружу кладутся только те поля, что уже прошли `validate_public`; эталон и тест в публичный слой не попадают никогда. Приватный oracle добавляется флагом `--with-oracle` и публиковать его вместе с `tasks/` нельзя.
+Команда `release` собирает публичный слой датасета в `data/releases/<версия>` (каталог в `data/`, в git не попадает). Это ответ на требование трека Datasets and Benchmarks по доступности: 299 задач PostgreSQL на `origin/master` выкладываются со стабильными `id`, лицензиями, `split.json` и sha256-манифестом. `postgres__04c25af21c02` в набор не входит: её база не предок `origin/master`. Наружу кладутся только те поля, что уже прошли `validate_public`; эталон и тест в публичный слой не попадают никогда. Приватный oracle добавляется флагом `--with-oracle` и публиковать его вместе с `tasks/` нельзя. Выгрузку, собранную до перезаморозки split, нужно собрать заново: `holdout_sha256` сменился.
 
 - `id` = `postgres__<head[:12]>`, выведен из коммита-эталона, поэтому не меняется при пересборке; совпадение коротких префиксов — ошибка.
 - `manifest.json` байт-детерминирован: два ребилда дают одинаковый `content_sha256`, расхождение означает изменение данных, а не времени сборки.
@@ -288,7 +294,7 @@ uv run python -m db_pipeline.benchmark release-verify --target <каталог>
 
 ### Оркестрация
 
-Smoke ведёт себя сам, без compose: на сессию поднимается одна внутренняя сеть и один model-gateway, на каждый graph-run — отдельный одноразовый graph-container с копией union-индекса. Порядок условий чередуется (B/G, G/B, B/G, G/B, B/G), сессии не переиспользуются. Ноль MCP-вызовов в graph-run считается ошибкой интеграции, а не результатом.
+Smoke ведёт себя сам, без compose: на сессию поднимается одна внутренняя сеть и один model-gateway, на каждый graph-run — отдельный одноразовый graph-container с копией `graph.sqlite`. Порядок условий чередуется (B/G, G/B, B/G, G/B, B/G), сессии не переиспользуются. Ноль MCP-вызовов в graph-run считается ошибкой интеграции, а не результатом.
 
 `docker/compose.benchmark.yml` оставлен как ручной диагностический сценарий: он поднимает gateway и граф с постоянной внешней SQLite, а `BENCH_GRAPH_BASE_SHA` задаётся вручную.
 
@@ -300,13 +306,25 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 ### Граф кода
 
-Свой MCP-сервер с семью инструментами поверх одного `graph.sqlite`. Отсечка — `GraphView(base_sha)`: предки базы минус `head_sha` и его потомки. `find_code_symbols`, `read_versioned_source` и `search_git_history` читают дерево базы и окно последних 50 предков; `symbol_history`, `tests_to_code`, `similar_fixes` и `find_error_origin` читают ту же отсечку, без отдельного `history.sqlite`. Co-change считается на запросе. Описания четырёх инструментов истории сформулированы по ситуации.
+Один файл `data/graph/graph.sqlite`. Источник сборки — локальный клон `data/clones/postgres`; PRISM в сборке и в рантайме не участвует. Факты ключуются `commit_oid` и `blob_oid`. Стадии `graph-build`: `extract → trees → symbols → derive → validate`. Уже известные oid пропускаются, `--fetch` делает `git fetch origin master`. Окно ханков — последние 50 предков каждой базы. Прежние `postgres.sqlite` и `history.sqlite` из рантайма убраны и лежат в `data/archive/graph-v1v2/`.
 
-Любая возвращаемая revision обязана быть в `visible`. Пустой ответ пишет `not_found` или `outside_cutoff`.
+Все семь MCP-инструментов читают граф только через `GraphView(base_sha, head_sha)`: видны предки базы, включая её саму, и не видны `head_sha` и его потомки. Файл открывается `mode=ro&immutable=1`.
 
-Ручка прогона `graph` подключает все семь инструментов, `graph_v2` — абляция: три инструмента поиска по коду выключаются картой `tools` в конфиге OpenCode. Парный прогон различает руки флагом `--ablation` и вариант абзаца промпта — флагом `--prompt-variant` (`directive` против `situational`).
+- `find_code_symbols` — символы дерева текущей базы, revision = base.
+- `read_versioned_source` — blob из дерева базы или из `file_change` окна.
+- `search_git_history` — FTS по сообщениям видимых коммитов и ханкам окна.
+- `symbol_history` — изменения символа от свежих коммитов к старым.
+- `tests_to_code` — co-change на запросе по видимым `file_change` (вес 1/n, коммиты больше 8 путей отброшены).
+- `similar_fixes` — FTS по сообщениям видимых коммитов.
+- `find_error_origin` — `error_strings` текущего дерева.
 
-Граф собирается `graph-build` по предкам всех баз. В контейнер уходит один файл через `docker cp`, полный git-клон не монтируется.
+Каждый ответ несёт revision, path, SHA-256 и метаданные отсечки. Пустой ответ пишет `not_found` или `outside_cutoff`. Любая возвращаемая revision обязана быть в `visible`.
+
+Ручка прогона `graph` подключает все семь инструментов. `graph_v2` остаётся абляцией на стороне OpenCode: три инструмента поиска по коду выключаются картой `tools`, сервер по-прежнему отдаёт все семь. Парный прогон различает руки флагом `--ablation`, вариант абзаца промпта — флагом `--prompt-variant` (`directive` против `situational`).
+
+В контейнер задачи уходит один файл потоковым `docker cp` (`container.copy_in`), переменная окружения одна: `BENCH_GRAPH_DB`. Git-клон не монтируется.
+
+Проверки до сравнительного прогона: `graph-coverage` (структура 299 баз и живой вызов семи инструментов), `graph-leak-audit` и `graph-canary` (membership, prior-twin по `patch_id`, канарейки эталона, отказ по `head_sha`). Подробности — [docs/graph-cutoff.md](docs/graph-cutoff.md).
 
 ### Отчёт
 
@@ -331,7 +349,7 @@ cp .env.example .env
 
 Импорт JSON в pg-gym, повтор 104 задач, пять повторов и языковой отбор. Хостовый путь `opencode_run.py` больше не участвует в benchmark-прогоне: агент работает в task-контейнере, а ключ модели выдаёт model-gateway.
 
-Полного парного smoke 5×2 пока нет: последний запуск остановлен после четырёх прогонов, сводный `data/reports/smoke-postgres.json` не дописан (см. [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md)). Выгрузка датасета собрана локально (`release`), но наружу не публиковалась: решение о форме публикации остаётся за руководителем.
+Сравнительного прогона `bare` против `graph` на новом графе нет: интеграционный smoke пяти dev-задач проверял только MCP. Прежний парный smoke на старом индексе остановлен после четырёх прогонов, сводный `data/reports/smoke-postgres.json` не дописан (см. [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md)). Выгрузка датасета командой `release` наружу не публиковалась: решение о форме публикации остаётся за руководителем, а снимок до перезаморозки split нужно собрать заново.
 
 ## Внешние зависимости
 
@@ -340,7 +358,7 @@ cp .env.example .env
 - `repos.toml` указывает `samples_dir = "../db_agent_gym/pg-gym/suites/commit/data/samples"`;
 - `src/db_pipeline/postgres_report.py` и `src/db_pipeline/samples.py` ищут зеркало `pg-gym/stand/pg.git`.
 
-Код `postgres_gym` не импортируется и не устанавливается. Для benchmark-прогона эти пути не нужны: задачи и oracle уже сконвертированы в `data/benchmark/postgres`. Индекс графа собирается из локального клона `data/clones/postgres`.
+Код `postgres_gym` не импортируется и не устанавливается. Для benchmark-прогона эти пути не нужны: задачи и oracle уже сконвертированы в `data/benchmark/postgres`. Граф собирается только из локального клона `data/clones/postgres`. `graph/prism.py` и `graph/verify_a.py` остаются разовой проверкой и в сборку графа не входят.
 
 ## Стек Langfuse
 
