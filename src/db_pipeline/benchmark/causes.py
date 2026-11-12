@@ -182,17 +182,26 @@ def build_cause_report(
     records: list[dict[str, object]] | None = None,
     modes: tuple[str, ...] = (),
     prompt_variant: str = "",
+    experiment_id: str = "",
 ) -> dict[str, object]:
     """Отчёт по причинам: пер-прогонные записи и сводка.
 
-    ``modes`` и ``prompt_variant`` необязательно сужают набор (например, только
-    новый абляционный прогон: ``modes=('graph', 'graph_v2')`` и
-    ``prompt_variant='situational'``), иначе в один отчёт попадут записи разных
-    прогонов.
+    ``modes`` и ``prompt_variant`` необязательно сужают набор, иначе в один
+    отчёт попадут записи разных прогонов. ``experiment_id`` отсекает чужие партии.
     """
     from db_pipeline.benchmark import eval as eval_module
 
-    selected = eval_module.load_records(data) if records is None else list(records)
+    selected = (
+        eval_module.load_records(data, experiment_id)
+        if records is None
+        else list(records)
+    )
+    if records is not None and experiment_id != "":
+        selected = [
+            record
+            for record in selected
+            if eval_module.experiment_of(record) == experiment_id
+        ]
     if len(modes) > 0:
         selected = [record for record in selected if str(record.get("mode")) in modes]
     if prompt_variant != "":
@@ -203,7 +212,11 @@ def build_cause_report(
         ]
     runs = classify_records(selected, data)
     return {
-        "filters": {"modes": list(modes), "prompt_variant": prompt_variant},
+        "filters": {
+            "modes": list(modes),
+            "prompt_variant": prompt_variant,
+            "experiment_id": experiment_id,
+        },
         "summary": aggregate_causes(runs),
         "runs": runs,
     }

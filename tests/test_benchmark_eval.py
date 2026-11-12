@@ -307,9 +307,9 @@ class StepLimitTests(unittest.TestCase):
         self.assertFalse(completion.countable(record, step_limit))
 
 
-class AblationTests(unittest.TestCase):
+class ExperimentFilterTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.tmp = tempfile.TemporaryDirectory(prefix="ablation-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="experiment-")
         self.data = Path(self.tmp.name)
         (self.data / "runs").mkdir(parents=True)
         (self.data / "reports").mkdir(parents=True)
@@ -323,32 +323,30 @@ class AblationTests(unittest.TestCase):
             json.dumps(record, ensure_ascii=False), encoding="utf-8"
         )
 
-    def test_ablation_compares_graph_against_graph_v2(self) -> None:
-        for day in ("01", "02"):
-            self._write(_record("postgres__a", "graph", True, f"2026-01-{day}T00:00:00+00:00"))
-            self._write(_record("postgres__a", "graph_v2", True, f"2026-01-{day}T00:10:00+00:00"))
-        report = eval_module.build_report(self.data)
-        ablation = cast("dict[str, object]", report["ablation"])
-        self.assertEqual(ablation["left"], "graph")
-        self.assertEqual(ablation["right"], "graph_v2")
-        self.assertEqual(ablation["pairs"], 2)
+    def test_experiment_id_excludes_other_batches(self) -> None:
+        first = _record("postgres__a", "bare", True, "2026-01-01T00:00:00+00:00")
+        first["experiment_id"] = "pilot"
+        second = _record("postgres__a", "graph", True, "2026-01-01T00:10:00+00:00")
+        second["experiment_id"] = "pilot"
+        old = _record("postgres__a", "bare", False, "2025-01-01T00:00:00+00:00")
+        old["experiment_id"] = "old"
+        self._write(first)
+        self._write(second)
+        self._write(old)
+        report = eval_module.build_report(self.data, experiment_id="pilot")
+        self.assertEqual(report["runs_total"], 2)
+        self.assertEqual(report["experiment_id"], "pilot")
 
-    def test_bare_vs_graph_pairs_unaffected_by_graph_v2(self) -> None:
-        """Абляционная рука не попадает в основное сравнение ``bare`` vs ``graph``."""
-        for mode in ("bare", "graph"):
-            self._write(_record("postgres__a", mode, True, "2026-01-01T00:00:00+00:00"))
-        self._write(_record("postgres__a", "graph_v2", False, "2026-01-01T00:10:00+00:00"))
-        report = eval_module.build_report(self.data)
-        self.assertEqual(report["pairs"], 1)
-        graph_v2 = cast("dict[str, object]", report["graph_v2"])
-        self.assertEqual(graph_v2["runs"], 1)
-
-    def test_ablation_hand_mismatch_is_incomplete(self) -> None:
-        self._write(_record("postgres__a", "graph", True, "2026-01-01T00:00:00+00:00"))
-        report = eval_module.build_report(self.data)
-        ablation = cast("dict[str, object]", report["ablation"])
-        self.assertEqual(ablation["pairs"], 0)
-        self.assertEqual(ablation["incomplete_pairs"], 1)
+    def test_sign_test_collapses_repeats(self) -> None:
+        pairs = [
+            eval_module.PairOutcome(task="a", repetition=0, bare_pass=False, graph_pass=True),
+            eval_module.PairOutcome(task="a", repetition=1, bare_pass=False, graph_pass=True),
+            eval_module.PairOutcome(task="b", repetition=0, bare_pass=True, graph_pass=False),
+        ]
+        result = eval_module.sign_test_by_task(pairs)
+        self.assertEqual(result.pairs, 2)
+        self.assertEqual(result.graph_only, 1)
+        self.assertEqual(result.bare_only, 1)
 
     def test_empty_diff_and_seconds_are_counted(self) -> None:
         record = _record("a", "bare", False, "2026-01-01")

@@ -47,6 +47,7 @@ class SmokeSession:
     graph_ids: list[str] = field(default_factory=list[str])
     cleanup_ok: bool = True
     gateway_health: dict[str, object] = field(default_factory=dict[str, object])
+    gateway_health_url: str = ""
 
 
 @beartype
@@ -60,13 +61,14 @@ def open_session(
     internal = f"{cfg.internal_network}-{suffix}"
     container.network_create(internal, internal=True, context=context)
     external = cfg.network or "bridge"
-    gateway_id, health = _start_gateway(cfg, external, internal, context)
+    gateway_id, health, health_url = _start_gateway(cfg, external, internal, context)
     return SmokeSession(
         cfg=cfg,
         network=internal,
         gateway_id=gateway_id,
         context=context,
         gateway_health=health,
+        gateway_health_url=health_url,
     )
 
 
@@ -76,7 +78,7 @@ def _start_gateway(
     external: str,
     internal: str,
     context: str,
-) -> tuple[str, dict[str, object]]:
+) -> tuple[str, dict[str, object], str]:
     key = _openrouter_key()
     if key == "":
         raise PipelineError("gateway", "OPENROUTER_API_KEY не задан")
@@ -89,6 +91,7 @@ def _start_gateway(
         environment={
             "OPENROUTER_API_KEY": key,
             "BENCH_ALLOWED_MODELS": cfg.model,
+            "BENCH_REASONING_MAX_TOKENS": str(cfg.reasoning_max_tokens),
         },
     )
     gateway_id = container.create_container(
@@ -109,7 +112,7 @@ def _start_gateway(
     if isinstance(remaining, (int, float)) and not isinstance(remaining, bool) and remaining <= 0:
         container.remove_container(gateway_id, context=context)
         raise PipelineError("gateway", "бюджет OpenRouter исчерпан")
-    return gateway_id, health
+    return gateway_id, health, url
 
 
 @beartype
@@ -128,6 +131,14 @@ def _gateway_health(url: str) -> dict[str, object]:
         return {}
     raw = cast("dict[object, object]", loaded)
     return {str(key): item for key, item in raw.items()}
+
+
+@beartype
+def read_gateway_health(session: SmokeSession) -> dict[str, object]:
+    """Повторно читает ``/health``: провайдер и счётчик пустых ответов."""
+    if session.gateway_health_url == "":
+        return {}
+    return _gateway_health(session.gateway_health_url)
 
 
 @beartype

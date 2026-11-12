@@ -46,6 +46,10 @@ class GatewayModule(Protocol):
 
     def _retry_delay(self, response: object, attempt: int) -> float: ...
 
+    def _is_empty_stop(self, content: bytes) -> bool: ...
+
+    def _inject_reasoning(self, body: bytes) -> bytes: ...
+
 
 def _load_gateway() -> types.ModuleType | None:
     if not GATEWAY_PATH.is_file():
@@ -147,6 +151,26 @@ class GatewayRetryTests(unittest.TestCase):
         response = httpx.Response(402)
         delay = self.module._retry_delay(response, attempt=2)  # pyright: ignore[reportPrivateUsage]
         self.assertAlmostEqual(delay, 4.0)
+
+    def test_empty_stop_has_no_text_and_no_tools(self) -> None:
+        empty = b'{"choices":[{"finish_reason":"stop","message":{"content":"","tool_calls":[]}}]}'
+        filled = b'{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}'
+        tools = b'{"choices":[{"finish_reason":"stop","message":{"content":null,"tool_calls":[{"id":"1"}]}}]}'
+        length = b'{"choices":[{"finish_reason":"length","message":{"content":""}}]}'
+        self.assertTrue(self.module._is_empty_stop(empty))  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module._is_empty_stop(filled))  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module._is_empty_stop(tools))  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module._is_empty_stop(length))  # pyright: ignore[reportPrivateUsage]
+
+    def test_reasoning_cap_is_injected_once(self) -> None:
+        import json
+
+        self.module.REASONING_MAX_TOKENS = 1024  # type: ignore[attr-defined]
+        body = self.module._inject_reasoning(b'{"model":"m"}')  # pyright: ignore[reportPrivateUsage]
+        loaded = json.loads(body)
+        self.assertEqual(loaded["reasoning"], {"max_tokens": 1024})
+        again = self.module._inject_reasoning(body)  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(json.loads(again)["reasoning"], {"max_tokens": 1024})
 
 
 if __name__ == "__main__":

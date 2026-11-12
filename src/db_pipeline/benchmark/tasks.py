@@ -19,20 +19,27 @@ from beartype import beartype
 from db_pipeline.benchmark.models import as_str_list
 
 SYSTEM_RULES = """\
-You are working in a real PostgreSQL 17 source tree, at an upstream commit with \
-one bug still in it. Fix the bug in the C code.
+You are working in a real PostgreSQL 17 source tree, at an upstream commit. \
+Make the change described below; it may touch C code, catalog `.dat` files and \
+SQL scripts.
 
-The tree builds and tests itself with its own machinery: `make` at the root, \
-`make -C src/test/regress check` for the regression suite. Read the code around \
-the area you are changing and follow its conventions.
+The tree builds and tests itself with its own machinery. Prefer a quiet build \
+and a targeted regression run before the full suite:
 
-You are graded by the upstream regression test for this bug. That test is off \
-disk while you work and is put back afterwards, so you cannot read it, and \
+`make -s`
+
+`make -C src/test/regress check-tests TESTS=<the test named below>`
+
+`make -C src/test/regress check` runs the whole regression suite. Read the code \
+around the area you are changing and follow its conventions.
+
+You are graded by the upstream regression test for this change. That test is \
+off disk while you work and is put back afterwards, so you cannot read it, and \
 writing anything under src/test/ is detected and scores zero. Everything the \
 test checks is in the task below; make the code do that and the test passes.
 
-The rest of the regression suite runs too. A fix that breaks something else is \
-not a fix.
+The rest of the regression suite runs too. A change that breaks something else \
+does not pass.
 """
 
 TRAILER_RE = re.compile(

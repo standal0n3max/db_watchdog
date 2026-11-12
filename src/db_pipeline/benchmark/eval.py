@@ -34,13 +34,9 @@ from db_pipeline.benchmark import completion, paths
 # Инструменты, которые меняют код: по ним определяется «первая правка».
 EDIT_TOOLS = ("edit", "write", "patch", "multiedit", "apply_patch", "str_replace")
 
-# Основное сравнение и абляция. ``bare`` против ``graph`` (v1+v2) — базовое
-# сравнение; ``graph`` против ``graph_v2`` — абляция слоя v1: две руки
-# отличаются только набором включённых инструментов MCP-сервера.
+# Основное сравнение: ``bare`` против ``graph``.
 COMPARISON_LEFT = "bare"
 COMPARISON_RIGHT = "graph"
-ABLATION_LEFT = "graph"
-ABLATION_RIGHT = "graph_v2"
 
 
 @beartype
@@ -99,8 +95,15 @@ class McNemarResult:
 
 
 @beartype
-def load_records(data: Path | None = None) -> list[dict[str, object]]:
-    """Читает все run records из ``data/runs``."""
+def load_records(
+    data: Path | None = None,
+    experiment_id: str = "",
+) -> list[dict[str, object]]:
+    """Читает run records из ``data/runs``.
+
+    ``experiment_id`` отсекает чужие партии: иначе старые прогоны смешиваются
+    с пилотом и сбивают нумерацию повторов.
+    """
     found: list[dict[str, object]] = []
     for path in sorted(paths.runs_dir(data).glob("*.json")):
         try:
@@ -111,8 +114,21 @@ def load_records(data: Path | None = None) -> list[dict[str, object]]:
             continue
         record = cast("dict[str, object]", raw)
         if record.get("func") and record.get("mode"):
+            if experiment_id != "" and experiment_of(record) != experiment_id:
+                continue
             found.append(record)
     return found
+
+
+@beartype
+def experiment_of(record: dict[str, object]) -> str:
+    direct = str(record.get("experiment_id") or "")
+    if direct != "":
+        return direct
+    manifest = record.get("manifest")
+    if isinstance(manifest, dict):
+        return str(cast("dict[str, object]", manifest).get("experiment_id") or "")
+    return ""
 
 
 @beartype
@@ -139,8 +155,8 @@ def build_pairs(
     В пары попадают только пригодные прогоны (``ok`` и ``self_stop_empty``):
     API-отказы и срабатывания лимитов исключаются, иначе McNemar измеряет
     надёжность шлюза, а не качество графа. Исключённые учитываются отдельно.
-    По умолчанию руки — ``bare`` и ``graph``; для абляции слоя v1 передаются
-    ``graph`` и ``graph_v2``.
+    По умолчанию руки — ``bare`` и ``graph``. ``length_partial`` и прочие
+    лимиты в пары не входят.
     """
     buckets: dict[tuple[str, int], PairOutcome] = {}
     for record in records:
@@ -402,20 +418,22 @@ def build_report(
     section: str = "holdout",
     repetitions: int = 2,
     records: list[dict[str, object]] | None = None,
-    modes: tuple[str, ...] = (COMPARISON_LEFT, COMPARISON_RIGHT, ABLATION_RIGHT),
+    modes: tuple[str, ...] = (COMPARISON_LEFT, COMPARISON_RIGHT),
+    experiment_id: str = "",
 ) -> dict[str, object]:
     """Собирает итоговый отчёт: пары, McNemar, метрики и страту ``prior_twin``.
 
     ``records`` позволяет посчитать отчёт по одному прогону (например, probe) и
     не смешивать его с уже накопленными записями ``data/runs``. Если список не
-    задан, читаются все сохранённые прогоны.
+    задан, читаются сохранённые прогоны, при непустом ``experiment_id`` — только
+    эта партия.
 
-    ``modes`` задаёт, какие руки входят в отчёт. По умолчанию это ``bare``,
-    ``graph`` и абляционная ``graph_v2``: основное сравнение — ``bare`` против
-    ``graph``; блок ``ablation`` сравнивает ``graph`` против ``graph_v2`` и
-    отвечает, вредит ли слой v1, когда есть рабочий grep.
+    ``modes`` задаёт, какие руки входят в отчёт. Основное сравнение — ``bare``
+    против ``graph``.
     """
-    selected = load_records(data) if records is None else list(records)
+    selected = load_records(data, experiment_id) if records is None else list(records)
+    if records is not None and experiment_id != "":
+        selected = [record for record in selected if experiment_of(record) == experiment_id]
     records = [record for record in selected if record.get("mode") in modes]
     assign_repetitions(records)
     pairs = build_pairs(records)
@@ -459,14 +477,15 @@ def build_report(
         # Основная страта: база есть в PRISM и эталон не применялся прежде.
         "mcnemar_prism_covered": mcnemar(covered).to_dict(),
         "mcnemar_prism_covered_normal": mcnemar(covered_normal).to_dict(),
-        "ablation": _ablation(records, twins, missing_prism),
+        "sign_test_by_task": sign_test_by_task(complete).to_dict(),
+        "itt": itt_summary(records),
+        "experiment_id": experiment_id,
         "prior_twin_tasks": sorted(twins),
         "prior_twin_pairs": len(twin_pairs),
         "prism_missing_tasks": sorted(missing_prism),
         "prism_missing_pairs": len(complete) - len(covered),
         "bare": aggregate(by_mode.get(COMPARISON_LEFT, [])),
         "graph": aggregate(by_mode.get(COMPARISON_RIGHT, [])),
-        "graph_v2": aggregate(by_mode.get(ABLATION_RIGHT, [])),
     }
 
 
@@ -481,37 +500,76 @@ def _steps_of(records: list[dict[str, object]]) -> int:
 
 
 @beartype
-def _ablation(
-    records: list[dict[str, object]],
-    twins: set[str],
-    missing_prism: set[str],
-) -> dict[str, object]:
-    """Блок абляции: ``graph`` (v1+v2) против ``graph_v2`` (только v2).
+def sign_test_by_task(pairs: list[PairOutcome]) -> McNemarResult:
+    """Знаковый тест по задачам: один голос на задачу, повторы не независимы.
 
-    Обе руки отличаются лишь набором инструментов MCP: v1 в абляции выключен.
-    ``edges == 0`` означает, что слои неразличимы по pass; ``both_pass`` и
-    ``both_fail`` показывают, что решает не граф, а сама задача.
+    Для каждой задачи берётся большинство pass по руке. Ничья отбрасывается.
+    Считается тем же точным биномиальным тестом, что и McNemar, но единица —
+    задача, а не повтор.
     """
-    pairs = build_pairs(records, ABLATION_LEFT, ABLATION_RIGHT)
-    complete = [pair for pair in pairs if pair.bare and pair.graph]
-    normal = [pair for pair in complete if pair.task not in twins]
-    covered = [pair for pair in complete if pair.task not in missing_prism]
+    by_task: dict[str, list[PairOutcome]] = {}
+    for pair in pairs:
+        by_task.setdefault(pair.task, []).append(pair)
+    collapsed: list[PairOutcome] = []
+    for task, group in sorted(by_task.items()):
+        bare_votes = sum(1 for item in group if item.bare_pass)
+        graph_votes = sum(1 for item in group if item.graph_pass)
+        if bare_votes == graph_votes:
+            continue
+        collapsed.append(
+            PairOutcome(
+                task=task,
+                repetition=0,
+                bare_pass=bare_votes > graph_votes,
+                graph_pass=graph_votes > bare_votes,
+            )
+        )
+    return mcnemar(collapsed)
+
+
+@beartype
+def itt_summary(records: list[dict[str, object]]) -> dict[str, object]:
+    """Первичный разбор: реальный вердикт всех прогонов, без отсечения лимитов.
+
+    Вторичный per-protocol для graph — только записи с ``agent_mcp_calls`` > 0.
+    """
+    def _pass_rate(rows: list[dict[str, object]]) -> float:
+        if len(rows) == 0:
+            return 0.0
+        return round(sum(1 for row in rows if row.get("pass")) / len(rows), 4)
+
+    bare = [row for row in records if row.get("mode") == COMPARISON_LEFT]
+    graph = [row for row in records if row.get("mode") == COMPARISON_RIGHT]
+    protocol = [
+        row
+        for row in graph
+        if _int_field(row.get("agent_mcp_calls")) > 0
+    ]
     return {
-        "left": ABLATION_LEFT,
-        "right": ABLATION_RIGHT,
-        "pairs": len(complete),
-        "incomplete_pairs": len(pairs) - len(complete),
-        "mcnemar_pair_level": mcnemar(complete).to_dict(),
-        "mcnemar_task_level": mcnemar(complete, task_level=True).to_dict(),
-        "mcnemar_normal_only": mcnemar(normal).to_dict(),
-        "mcnemar_prism_covered": mcnemar(covered).to_dict(),
+        "bare_runs": len(bare),
+        "graph_runs": len(graph),
+        "bare_pass_rate": _pass_rate(bare),
+        "graph_pass_rate": _pass_rate(graph),
+        "graph_protocol_runs": len(protocol),
+        "graph_protocol_pass_rate": _pass_rate(protocol),
     }
 
 
 @beartype
-def write_report(data: Path | None = None, section: str = "holdout") -> Path:
+def _int_field(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
+
+
+@beartype
+def write_report(
+    data: Path | None = None,
+    section: str = "holdout",
+    experiment_id: str = "",
+) -> Path:
     """Пишет отчёт в ``data/reports/pairwise-<section>.json``."""
-    report = build_report(data, section)
+    report = build_report(data, section, experiment_id=experiment_id)
     target = paths.reports_dir(data) / f"pairwise-{section}.json"
     target.write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

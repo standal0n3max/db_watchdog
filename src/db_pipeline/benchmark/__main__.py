@@ -13,9 +13,9 @@
 
 Smoke требует ровно пять заранее зарегистрированных задач и десять запусков в
 заранее фиксированном counterbalanced порядке B/G, G/B, B/G, G/B, B/G. Единичная
-ошибка не останавливает оставшиеся пары; итог всегда записывается. Graph-run без
-MCP-вызова и без опубликованной трассы считается integration failure и даёт
-ненулевой exit code. Run records immutable: повторный smoke не перезаписывает
+ошибка не останавливает оставшиеся пары; итог всегда записывается. Graph-run
+без доставленной сводки или без отсечки считается integration failure. Вердикт
+тестов при этом не переписывается. Run records immutable: повторный smoke не перезаписывает
 предыдущие результаты.
 
 CLI harvesting в ``db_pipeline.__main__`` не затрагивается.
@@ -125,7 +125,23 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if ok and not args.no_probe:
             report["langfuse_probe"] = telemetry.probe(cfg.otel)
     report["model"] = cfg.model
+    report["context_length"] = cfg.context_length
+    report["max_tokens"] = cfg.max_tokens
+    report["experiment_id"] = cfg.experiment_id
     report["openrouter_key_present"] = cfg.openrouter_key_present
+    if cfg.openrouter_key_present:
+        observed = budget.model_context_length(os.environ.get("OPENROUTER_API_KEY", ""), cfg.model)
+        report["openrouter_context_length"] = observed
+        report["context_length_ok"] = (
+            observed is not None and cfg.context_length <= observed
+        )
+    if len(missing) == 0:
+        project_ok, project_detail = telemetry.project_matches(cfg.otel, cfg.langfuse_project)
+        report["langfuse_project"] = {
+            "expected": cfg.langfuse_project,
+            "ok": project_ok,
+            "detail": project_detail,
+        }
     print(json.dumps(report, ensure_ascii=False, indent=2))
     healthy = report["docker"] == "ok"
     health = report.get("langfuse_health")
@@ -134,6 +150,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
         health_map = cast("dict[str, object]", health)
         healthy = healthy and bool(health_map.get("ok"))
+    project = report.get("langfuse_project")
+    if isinstance(project, dict):
+        from typing import cast
+
+        healthy = healthy and bool(cast("dict[str, object]", project).get("ok"))
+    if "context_length_ok" in report:
+        healthy = healthy and bool(report["context_length_ok"])
     return 0 if healthy else 1
 
 
@@ -250,12 +273,18 @@ def _smoke_run(
             name, mode=mode, data=data, smoke=session, prompt_variant=prompt_variant
         )
     except Exception as exc:  # noqa: BLE001 - единичная ошибка не останавливает пары
+        from datetime import UTC, datetime
+
+        timeout = type(exc).__name__ == "TimeoutExpired"
         return {
             "func": name,
             "mode": mode,
+            "started": datetime.now(UTC).isoformat(timespec="seconds"),
             "pass": False,
             "verdict": "ERROR",
             "integration_failure": True,
+            "agent_timeout": timeout,
+            "completion": {"outcome": "timeout" if timeout else "crash_unknown"},
             "error": f"{type(exc).__name__}: {exc}"[:500],
         }
 
@@ -280,7 +309,6 @@ def _smoke_report(
     cleanup_ok = bool(cleanup.get("ok"))
     ok = (
         total == len(SMOKE_ORDER) * 2
-        and len(graph_without_mcp) == 0
         and len(integration_failures) == 0
         and cleanup_ok
     )
@@ -386,16 +414,11 @@ def cmd_graph_canary(args: argparse.Namespace) -> int:
 
 @beartype
 def cmd_pairwise(args: argparse.Namespace) -> int:
-    """Парный прогон рук по секции split с counterbalanced порядком.
+    """Парный прогон ``bare`` против ``graph`` с counterbalanced порядком.
 
-    Обычный режим — ``bare`` против ``graph`` (v1+v2). С ``--ablation`` правая
-    рука заменяется на ``graph_v2`` (только слой истории): сравниваются две
-    graph-руки, отличающиеся набором инструментов MCP.
-
-    Порядок рук чередуется по задачам (левая рука первой на чётных, правая — на
-    нечётных) и по повторам, чтобы дрейф модели и кэш не благоприятствовали одной
-    руке. Ошибка одной пары не останавливает остальные: запись об ошибке всё
-    равно попадает в отчёт.
+    Порядок рук чередуется по задачам и по повторам. Ошибка одной пары не
+    останавливает остальные: запись об ошибке всё равно попадает в отчёт.
+    Отчёт фильтруется по ``experiment_id`` из конфига.
     """
     from db_pipeline.benchmark import eval as eval_module
     from db_pipeline.benchmark import session as smoke_session
@@ -405,13 +428,9 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
     if len(names) == 0:
         print(json.dumps({"error": f"секция {args.section} пуста"}, ensure_ascii=False))
         return 2
-    hands = (
-        (eval_module.ABLATION_LEFT, eval_module.ABLATION_RIGHT)
-        if args.ablation
-        else (eval_module.COMPARISON_LEFT, eval_module.COMPARISON_RIGHT)
-    )
+    hands = (eval_module.COMPARISON_LEFT, eval_module.COMPARISON_RIGHT)
     cfg = load_config()
-    guard = _budget_guard(args.no_budget_check)
+    guard = _budget_guard(args.no_budget_check, cfg.max_tokens)
     if not guard["ok"]:
         print(json.dumps({"error": "бюджет OpenRouter исчерпан", "budget": guard},
                          ensure_ascii=False))
@@ -430,18 +449,18 @@ def cmd_pairwise(args: argparse.Namespace) -> int:
         cleanup = smoke_session.close_session(session)
     # Отчёт считается по записям этого прогона, а не по всему ``data/runs``:
     # иначе probe смешался бы со старым tune и повторы перенумеровались.
-    modes = tuple(dict.fromkeys(hands)) if args.ablation else (
-        COMPARISON_LEFT,
-        COMPARISON_RIGHT,
-    )
     report = eval_module.build_report(
-        data, args.section, records=records, modes=modes
+        data,
+        args.section,
+        records=records,
+        modes=hands,
+        experiment_id=cfg.experiment_id,
     )
     report["section"] = args.section
     report["tasks"] = names
     report["hands"] = list(hands)
-    report["ablation_run"] = args.ablation
     report["prompt_variant"] = args.prompt_variant
+    report["experiment_id"] = cfg.experiment_id
     report["budget"] = guard
     report["cleanup"] = cleanup
     label = args.report_label or args.section
@@ -478,11 +497,14 @@ def _hand_order(
 
 
 @beartype
-def _budget_guard(skip: bool) -> dict[str, object]:
+def _budget_guard(skip: bool, max_tokens: int) -> dict[str, object]:
     """Проверяет бюджет OpenRouter перед batch, если его не отключили флагом."""
     if skip:
         return {"ok": True, "skipped": True}
-    report = budget.check_budget(os.environ.get("OPENROUTER_API_KEY", ""))
+    report = budget.check_budget(
+        os.environ.get("OPENROUTER_API_KEY", ""),
+        max_tokens=max_tokens,
+    )
     return report.to_dict()
 
 
@@ -491,8 +513,9 @@ def cmd_eval(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark import eval as eval_module
 
     data = None if args.data is None else Path(args.data)
-    report = eval_module.build_report(data, args.section)
-    target = eval_module.write_report(data, args.section)
+    experiment_id = args.experiment_id or load_config().experiment_id
+    report = eval_module.build_report(data, args.section, experiment_id=experiment_id)
+    target = eval_module.write_report(data, args.section, experiment_id=experiment_id)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     print(f"\nотчёт: {target}")
     return 0
@@ -505,8 +528,12 @@ def cmd_causes(args: argparse.Namespace) -> int:
 
     data = None if args.data is None else Path(args.data)
     modes = tuple(args.mode) if len(args.mode) > 0 else ()
+    experiment_id = args.experiment_id or load_config().experiment_id
     report = causes.build_cause_report(
-        data, modes=modes, prompt_variant=args.prompt_variant
+        data,
+        modes=modes,
+        prompt_variant=args.prompt_variant,
+        experiment_id=experiment_id,
     )
     target = paths.reports_dir(data) / f"{args.report_label}.json"
     target.write_text(
@@ -515,6 +542,52 @@ def cmd_causes(args: argparse.Namespace) -> int:
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     print(f"\nотчёт: {target}")
     return 0
+
+
+@beartype
+def cmd_graph_briefing_audit(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import briefing_audit, split as split_module
+
+    data = None if args.data is None else Path(args.data)
+    excluded = set(_task_names(args.exclude, data))
+    split = split_module.derive_split(data)
+    names = [
+        name
+        for section in ("dev", "tune")
+        for name in split[section]
+        if name not in excluded
+    ]
+    report = briefing_audit.audit_tasks(names, data)
+    report["excluded"] = sorted(excluded)
+    if len(args.canary) > 0:
+        canary_names = _task_names(args.canary, data)
+        report["canary"] = briefing_audit.canary_briefings(canary_names, data)
+    target = briefing_audit.write_audit(report, data)
+    print(json.dumps({"path": str(target), "mean_recall": report["mean_recall"], "tasks": report["tasks"]}, ensure_ascii=False, indent=2))
+    canary = report.get("canary")
+    if isinstance(canary, list):
+        from typing import cast
+
+        for item in cast("list[object]", canary):
+            if not isinstance(item, dict):
+                continue
+            row = cast("dict[str, object]", item)
+            if row.get("ok") is not True:
+                return 1
+    return 0
+
+
+@beartype
+def cmd_trace_dump(args: argparse.Namespace) -> int:
+    from db_pipeline.benchmark.graph import trace_dump
+
+    data = None if args.data is None else Path(args.data)
+    cfg = load_config()
+    experiment_id = args.experiment_id or cfg.experiment_id
+    report = trace_dump.dump_experiment(cfg, data, experiment_id, args.report_label)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    written = report["written"]
+    return 0 if isinstance(written, int) else 1
 
 
 @beartype
@@ -663,11 +736,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="не проверять остаток кредитов OpenRouter перед batch",
     )
     pairwise_parser.add_argument(
-        "--ablation",
-        action="store_true",
-        help="сравнивать graph против graph_v2 (отключены инструменты v1) вместо bare против graph",
-    )
-    pairwise_parser.add_argument(
         "--prompt-variant",
         choices=PROMPT_VARIANTS,
         default=PROMPT_DEFAULT,
@@ -679,6 +747,11 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument(
         "--section", default="holdout", choices=("dev", "tune", "holdout", "frozen")
     )
+    eval_parser.add_argument(
+        "--experiment-id",
+        default="",
+        help="фильтр партии; пусто — BENCH_EXPERIMENT_ID",
+    )
     eval_parser.set_defaults(handler=cmd_eval)
 
     causes_parser = sub.add_parser(
@@ -688,7 +761,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         nargs="*",
         default=[],
-        help="сузить руки (bare, graph, graph_v2); пусто — все",
+        help="сузить руки (bare, graph); пусто — все",
     )
     causes_parser.add_argument(
         "--prompt-variant",
@@ -700,7 +773,33 @@ def build_parser() -> argparse.ArgumentParser:
         default="causes",
         help="имя файла отчёта (по умолчанию causes)",
     )
+    causes_parser.add_argument("--experiment-id", default="")
     causes_parser.set_defaults(handler=cmd_causes)
+
+    briefing_parser = sub.add_parser(
+        "graph-briefing-audit",
+        help="recall сводки графа на dev и tune без пилотных задач",
+    )
+    briefing_parser.add_argument(
+        "--exclude",
+        nargs="*",
+        default=[],
+        help="задачи, которые не входят в аудит (пилотные)",
+    )
+    briefing_parser.add_argument(
+        "--canary",
+        nargs="*",
+        default=[],
+        help="задачи, по тексту сводки которых гоняются канарейки",
+    )
+    briefing_parser.set_defaults(handler=cmd_graph_briefing_audit)
+
+    trace_parser = sub.add_parser(
+        "trace-dump", help="выгрузить traces и observations Langfuse"
+    )
+    trace_parser.add_argument("--experiment-id", default="")
+    trace_parser.add_argument("--report-label", default="pilot-2026-11")
+    trace_parser.set_defaults(handler=cmd_trace_dump)
 
     release_parser = sub.add_parser(
         "release", help="публичная выгрузка задач: стабильные id, лицензии, sha256-манифест"

@@ -71,16 +71,10 @@ def serve() -> None:
 def _register(server: MCPServer, opened: GraphView) -> None:
     @server.tool()
     def find_code_symbols(name: str, limit: int = 20) -> dict[str, object]:
-        """Locate C symbols (functions, structs, macros) by name in history.
-
-        Use this to find which files and revisions define or reference a symbol
-        before editing. Call it as ``graph_find_code_symbols`` when the MCP
-        server prefix is exposed, or as ``find_code_symbols`` when it is not:
-        the tool name is always the plain one above.
+        """Locate C symbols by name. Call this tool as ``graph_find_code_symbols``.
 
         ``name`` is a bare identifier such as ``heap_insert`` (not a path).
-        Returns matching revisions; every revision is an ancestor of base_sha,
-        so nothing after the cutoff leaks. ``limit`` caps the number of hits.
+        Every revision is an ancestor of base_sha. ``limit`` caps the hits.
         """
         return graph_view.find_code_symbols(opened, name, limit)
 
@@ -93,17 +87,12 @@ def _register(server: MCPServer, opened: GraphView) -> None:
         start_line: int | None = None,
         end_line: int | None = None,
     ) -> dict[str, object]:
-        """Read a source file fragment at a pinned revision before the cutoff.
+        """Read a source fragment at a pinned revision. Call it as
+        ``graph_read_versioned_source``.
 
-        Use this when you have a path and a revision (from find_code_symbols or
-        search_git_history) and want the surrounding code. Call it as
-        ``graph_read_versioned_source`` with the MCP prefix, or
-        ``read_versioned_source`` without it: the tool name is the plain one.
-
-        ``revision`` must be an ancestor of base_sha; any later revision is
-        rejected. ``path`` is repository-relative (``src/backend/...``).
-        ``offset``/``limit`` are bytes; ``start_line``/``end_line`` (1-based)
-        take priority and return whole lines.
+        ``revision`` must be an ancestor of base_sha. ``path`` is
+        repository-relative. ``start_line``/``end_line`` (1-based) take priority
+        and return at most about 400 lines; a longer span sets ``truncated``.
         """
         return graph_view.read_versioned_source(
             opened, revision, path, offset, limit, start_line, end_line
@@ -111,63 +100,51 @@ def _register(server: MCPServer, opened: GraphView) -> None:
 
     @server.tool()
     def search_git_history(query: str, limit: int = 20) -> dict[str, object]:
-        """Search commit messages and hunks for a natural-language query.
+        """Search commit messages and hunks. Call this tool as
+        ``graph_search_git_history``.
 
-        Use this to find when and why code changed, for example a bug-fix phrase
-        from the task description. Call it as ``graph_search_git_history`` with
-        the MCP prefix or ``search_git_history`` without it: the name is plain.
-
-        ``query`` is free text; results are limited to ancestors of base_sha.
+        ``query`` is free text. Results stay within ancestors of base_sha.
         """
         return graph_view.search_git_history(opened, query, limit)
 
     @server.tool()
     def symbol_history(path: str, name: str, limit: int = 20) -> dict[str, object]:
-        """Reach for this when a function exists but its current shape does not
-        explain the bug: it shows what the function used to do, revision by
-        revision, so a recent behavior change becomes visible.
+        """Show how one function changed over time. Call this tool as
+        ``graph_symbol_history``.
 
-        Skip it if you only need the code as it is now or cannot name the
-        function yet. ``path`` is the file, ``name`` is the bare symbol; each
-        record carries the symbol's own line range and whether it is a
-        definition or a prototype. Nothing after the cutoff is returned.
+        ``path`` is the file, ``name`` is the bare symbol. Each record carries
+        the symbol line range and whether it is a definition. Nothing after
+        the cutoff is returned.
         """
         return graph_view.symbol_history(opened, path, name, limit)
 
     @server.tool()
     def tests_to_code(test: str, limit: int = 20) -> dict[str, object]:
-        """Reach for this when the task or a failing test names a test file and
-        you need the production code that test actually exercises, without
-        tracing call paths by hand.
+        """Map a regression test to the code it exercises. Call this tool as
+        ``graph_tests_to_code``.
 
-        Skip it if the task does not mention a test path. ``test`` is a
-        repository-relative test path; results are ranked by co-change weight
-        and limited to ancestors of base_sha.
+        ``test`` is a repository-relative test path. Results are ranked by
+        co-change weight and limited to ancestors of base_sha.
         """
         return graph_view.tests_to_code(opened, test, limit)
 
     @server.tool()
     def similar_fixes(query: str, limit: int = 20) -> dict[str, object]:
-        """Reach for this when you know the symptom but not the code: it finds
-        past commits whose intent resembles your description, showing how a
-        comparable bug was fixed before.
+        """Find past commits with a similar intent. Call this tool as
+        ``graph_similar_fixes``.
 
-        Skip it if you already know the file or symbol to look at. ``query`` is
-        free text, for example ``fix heap corruption on concurrent insert``.
-        Only ancestors of base_sha are searched.
+        ``query`` is free text, for example ``fix heap corruption on concurrent
+        insert``. Only ancestors of base_sha are searched.
         """
         return graph_view.similar_fixes(opened, query, limit)
 
     @server.tool()
     def find_error_origin(message: str, limit: int = 20) -> dict[str, object]:
-        """Reach for this when an error string is all you have: it points at the
-        ``ereport``/``errmsg`` site that prints that message, turning log text
-        into a file and line.
+        """Locate the code that prints an error message. Call this tool as
+        ``graph_find_error_origin``.
 
-        Skip it if the task mentions no error text. ``message`` is the literal
-        string, for example ``cache lookup failed``; placeholders such as
-        ``%s`` are normalized before matching. Results are limited to ancestors
-        of base_sha.
+        ``message`` is the literal string, for example ``cache lookup failed``.
+        Placeholders such as ``%s`` are normalized. Results stay at base_sha.
         """
         return graph_view.find_error_origin(opened, message, limit)
 

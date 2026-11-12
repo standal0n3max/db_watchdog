@@ -21,6 +21,12 @@ from typing import cast
 from beartype import beartype
 
 OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+
+# Завышенная цена выходного токена в долларах за миллион. OpenRouter резервирует
+# кредиты под ``max_tokens`` до ответа; порог отсекает ключ, которому 8192
+# токенов не хватает, ещё до первого прогона.
+USD_PER_MILLION_OUTPUT = 1.0
 
 
 @beartype
@@ -49,12 +55,25 @@ class BudgetReport:
 
 
 @beartype
+def required_credits(max_tokens: int) -> float:
+    """Минимальный остаток кредитов под один запрос с данным потолком ответа."""
+    if max_tokens <= 0:
+        return 0.0
+    return max_tokens / 1_000_000 * USD_PER_MILLION_OUTPUT
+
+
+@beartype
 def check_budget(
     api_key: str,
     url: str = OPENROUTER_KEY_URL,
     timeout: float = 20.0,
+    max_tokens: int = 8192,
 ) -> BudgetReport:
-    """Остаток кредитов ключа: пустой бюджет — abort, недоступность — unknown."""
+    """Остаток кредитов ключа: пустой бюджет — abort, недоступность — unknown.
+
+    ``max_tokens`` задаёт потолок, под который OpenRouter держит резерв. Если
+    остаток меньше оценки этого резерва, batch не начинается.
+    """
     if api_key == "":
         return BudgetReport(ok=False, reason="OPENROUTER_API_KEY не задан")
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
@@ -75,10 +94,16 @@ def check_budget(
     remaining = _float(data.get("limit_remaining"))
     limit = _float(data.get("limit"))
     usage = _float(data.get("usage"))
-    if "limit_remaining" in data and remaining <= 0:
+    needed = required_credits(max_tokens)
+    if "limit_remaining" in data and remaining < needed:
+        reason = (
+            "бюджет исчерпан"
+            if remaining <= 0
+            else f"кредитов {remaining} мало для max_tokens={max_tokens}"
+        )
         return BudgetReport(
             ok=False,
-            reason="бюджет исчерпан",
+            reason=reason,
             status=status,
             limit=limit,
             usage=usage,
@@ -106,6 +131,40 @@ def _data(body: str) -> dict[str, object]:
     if isinstance(data, dict):
         return cast("dict[str, object]", data)
     return mapping
+
+
+@beartype
+def model_context_length(
+    api_key: str,
+    model: str,
+    url: str = OPENROUTER_MODELS_URL,
+    timeout: float = 30.0,
+) -> int | None:
+    """``context_length`` модели из ``GET /api/v1/models``. ``None`` — нет данных."""
+    if api_key == "" or model == "":
+        return None
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode()
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
+        return None
+    payload = _data(body)
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        return None
+    for item in cast("list[object]", rows):
+        if not isinstance(item, dict):
+            continue
+        row = cast("dict[str, object]", item)
+        if str(row.get("id") or "") != model:
+            continue
+        value = row.get("context_length")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+    return None
 
 
 @beartype

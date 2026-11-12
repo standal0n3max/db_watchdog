@@ -52,9 +52,16 @@ class ClassifyTests(unittest.TestCase):
         record = _record(generations=_generations("length", output_tokens=0))
         self.assertEqual(completion.outcome(record), "length")
 
-    def test_length_with_output_is_not_length(self) -> None:
+    def test_length_with_output_is_partial(self) -> None:
         record = _record(generations=_generations("length"))
-        self.assertEqual(completion.outcome(record), "ok")
+        self.assertEqual(completion.outcome(record), "length_partial")
+        self.assertFalse(completion.countable(record))
+
+    def test_timeout_flag_is_timeout(self) -> None:
+        record = _record(generations=_generations("stop"))
+        record["agent_timeout"] = True
+        self.assertEqual(completion.outcome(record), "timeout")
+        self.assertFalse(completion.countable(record))
 
     def test_step_limit_detected_at_boundary(self) -> None:
         generations = _generations("tool-calls", "tool-calls", "tool-calls")

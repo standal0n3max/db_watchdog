@@ -22,6 +22,9 @@ from db_pipeline.benchmark.graph.symbols import is_test_path, normalize_message
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 _MASS_COMMIT = 8
+# Потолок фрагмента по строкам: целый файл раньше уходил ответом в десятки тысяч
+# символов и съедал контекст агента.
+SOURCE_LINE_CAP = 400
 
 
 @beartype
@@ -130,6 +133,17 @@ def _empty(view: GraphView, reason: str) -> dict[str, object]:
 
 
 @beartype
+def _response(view: GraphView, results: list[dict[str, object]]) -> dict[str, object]:
+    """Отдаёт cutoff один раз на ответ, а не в каждой строке."""
+    cleaned: list[dict[str, object]] = []
+    for item in results:
+        row = dict(item)
+        row.pop("cutoff", None)
+        cleaned.append(row)
+    return {"results": cleaned, "cutoff": _meta(view)}
+
+
+@beartype
 def _allows(view: GraphView, oid: str) -> bool:
     return view.cutoff.allows(oid, 0)
 
@@ -165,7 +179,7 @@ def find_code_symbols(view: GraphView, name: str, limit: int = 20) -> dict[str, 
         )
     if len(results) == 0:
         return _empty(view, "not_found")
-    return {"results": results, "cutoff": _meta(view)}
+    return _response(view, results)
 
 
 @beartype
@@ -224,8 +238,9 @@ def read_versioned_source(
             return _empty(view, "not_found")
         digest, content = blob
     fragment = _fragment(content, offset, limit, start_line, end_line)
-    return {
-        "results": [
+    return _response(
+        view,
+        [
             {
                 "revision": revision,
                 "path": path,
@@ -236,11 +251,10 @@ def read_versioned_source(
                 "total_lines": fragment["total_lines"],
                 "byte_span": fragment["byte_span"],
                 "content": fragment["content"],
-                "cutoff": _meta(view),
+                "truncated": fragment["truncated"],
             }
         ],
-        "cutoff": _meta(view),
-    }
+    )
 
 
 @beartype
@@ -283,6 +297,7 @@ def _fragment(
             "total_lines": content.count(b"\n") + (0 if content.endswith(b"\n") else 1),
             "byte_span": [start, end],
             "content": text.decode("utf-8", "replace"),
+            "truncated": False,
         }
     lines = content.splitlines(keepends=True)
     total = len(lines)
@@ -291,6 +306,10 @@ def _fragment(
     if last < first:
         last = first
     last = min(last, total if total > 0 else first)
+    truncated = False
+    if last - first + 1 > SOURCE_LINE_CAP:
+        last = first + SOURCE_LINE_CAP - 1
+        truncated = True
     start = _offset_of_line(lines, first)
     end = _offset_of_line(lines, last + 1) if last < total else len(content)
     return {
@@ -299,6 +318,7 @@ def _fragment(
         "total_lines": total,
         "byte_span": [start, end],
         "content": content[start:end].decode("utf-8", "replace"),
+        "truncated": truncated,
     }
 
 
@@ -355,7 +375,7 @@ def search_git_history(view: GraphView, query: str, limit: int = 20) -> dict[str
                 break
     if len(results) == 0:
         return _empty(view, "not_found")
-    return {"results": results, "cutoff": _meta(view)}
+    return _response(view, results)
 
 
 @beartype
@@ -424,7 +444,7 @@ def symbol_history(view: GraphView, path: str, name: str, limit: int = 20) -> di
         )
     if len(results) == 0:
         return _empty(view, "not_found")
-    return {"results": results, "cutoff": _meta(view)}
+    return _response(view, results)
 
 
 @beartype
@@ -477,7 +497,7 @@ def tests_to_code(view: GraphView, test: str, limit: int = 20) -> dict[str, obje
         )
     if len(results) == 0:
         return _empty(view, "not_found")
-    return {"results": results, "cutoff": _meta(view)}
+    return _response(view, results)
 
 
 @beartype
@@ -527,7 +547,7 @@ def similar_fixes(view: GraphView, query: str, limit: int = 20) -> dict[str, obj
         )
     if len(results) == 0:
         return _empty(view, "not_found")
-    return {"results": results, "cutoff": _meta(view)}
+    return _response(view, results)
 
 
 @beartype
@@ -568,7 +588,7 @@ def find_error_origin(view: GraphView, message: str, limit: int = 20) -> dict[st
         )
     if len(results) == 0:
         return _empty(view, "not_found")
-    return {"results": results, "cutoff": _meta(view)}
+    return _response(view, results)
 
 
 @beartype

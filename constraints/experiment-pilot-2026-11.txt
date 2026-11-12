@@ -1,0 +1,8 @@
+# Пилот bare vs graph. Seed — sha256("pilot-2026-11-13") mod 2^32.
+# Выбор: random.Random(seed).sample(sorted(tune), 5). Задачи слепые для подбора сводки.
+seed 428835211
+postgres__3b4c2b9db25e
+postgres__c9ea37231a2e
+postgres__0aaf0de7fed8
+postgres__b4307ae2e540
+postgres__a9f6e768ac28

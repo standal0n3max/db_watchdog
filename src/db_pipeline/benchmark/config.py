@@ -16,7 +16,11 @@ from dataclasses import dataclass
 
 from beartype import beartype
 
-from db_pipeline.benchmark.opencode import DEFAULT_MAX_TOKENS, DEFAULT_STEP_LIMIT
+from db_pipeline.benchmark.opencode import (
+    DEFAULT_CONTEXT_LENGTH,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_STEP_LIMIT,
+)
 from db_pipeline.benchmark.telemetry import OtelConfig
 
 
@@ -36,6 +40,10 @@ class BenchmarkConfig:
     step_limit: int
     max_tokens: int
     temperature: float
+    context_length: int
+    reasoning_max_tokens: int
+    experiment_id: str
+    langfuse_project: str
     agent_timeout: int
     container_timeout: int
     network: str
@@ -61,6 +69,10 @@ class BenchmarkConfig:
             "step_limit": self.step_limit,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
+            "context_length": self.context_length,
+            "reasoning_max_tokens": self.reasoning_max_tokens,
+            "experiment_id": self.experiment_id,
+            "langfuse_project": self.langfuse_project,
             "agent_timeout": self.agent_timeout,
             "opencode_version": self.opencode_version,
             "langfuse_url": self.otel.url,
@@ -84,6 +96,10 @@ def load_config() -> BenchmarkConfig:
         step_limit=int(_env("BENCH_STEP_LIMIT", str(DEFAULT_STEP_LIMIT))),
         max_tokens=int(_env("BENCH_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         temperature=float(_env("BENCH_TEMPERATURE", "0")),
+        context_length=int(_env("BENCH_CONTEXT_LENGTH", str(DEFAULT_CONTEXT_LENGTH))),
+        reasoning_max_tokens=int(_env("BENCH_REASONING_MAX_TOKENS", "1024")),
+        experiment_id=_env("BENCH_EXPERIMENT_ID"),
+        langfuse_project=_env("BENCH_LANGFUSE_PROJECT"),
         agent_timeout=int(_env("BENCH_AGENT_TIMEOUT", "1800")),
         container_timeout=int(_env("BENCH_CONTAINER_TIMEOUT", "3600")),
         network=_env("BENCH_NETWORK"),

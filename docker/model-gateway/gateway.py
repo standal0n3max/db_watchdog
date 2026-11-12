@@ -43,6 +43,24 @@ MAX_ATTEMPTS = int(os.environ.get("BENCH_GATEWAY_MAX_ATTEMPTS", "4"))
 MAX_RETRY_WAIT = float(os.environ.get("BENCH_GATEWAY_MAX_RETRY_WAIT", "120"))
 BASE_BACKOFF = float(os.environ.get("BENCH_GATEWAY_BASE_BACKOFF", "2"))
 
+# Пустой ответ (finish stop, нет текста и нет tool_calls) повторяется отдельно:
+# модель иногда возвращает его вместо вызова инструмента. Счётчик уходит
+# заголовком и копится для записи прогона.
+EMPTY_RETRIES = int(os.environ.get("BENCH_GATEWAY_EMPTY_RETRIES", "2"))
+
+# Потолок reasoning OpenRouter. Поле ``reasoning.max_tokens`` (не вместе с
+# ``effort``): иначе reasoning съедает ``max_tokens`` и агент получает пустой
+# ответ. 0 отключает подстановку.
+REASONING_MAX_TOKENS = int(os.environ.get("BENCH_REASONING_MAX_TOKENS", "1024"))
+
+# Последний успешный ответ: провайдер OpenRouter и сумма пустых повторов.
+# Прогоны идут по одному шлюзу последовательно, оркестратор снимает дельту.
+STATS: dict[str, object] = {
+    "provider": "",
+    "empty_retries_total": 0,
+    "last_empty_retries": 0,
+}
+
 # base_url не задаём: upstream URL собирается явно, иначе httpx склеивает
 # base path и относительный путь и получается дубль ``/api/v1/v1/...``.
 CLIENT = httpx.AsyncClient(timeout=600.0)
@@ -56,6 +74,10 @@ async def health(_request: Request) -> Response:
             "key_present": API_KEY != "",
             "models": sorted(ALLOWED),
             "budget_remaining": await _budget_remaining(),
+            "provider": STATS["provider"],
+            "empty_retries_total": STATS["empty_retries_total"],
+            "last_empty_retries": STATS["last_empty_retries"],
+            "reasoning_max_tokens": REASONING_MAX_TOKENS,
         }
     )
 
@@ -112,11 +134,30 @@ async def chat(request: Request) -> Response:
         "Content-Type": request.headers.get("content-type", "application/json"),
     }
     upstream_url = f"{UPSTREAM.rstrip('/')}{UPSTREAM_CHAT_PATH}"
-    upstream = await _post_with_retry(upstream_url, body, headers)
+    prepared = _inject_reasoning(body)
+    upstream = await _post_with_retry(upstream_url, prepared, headers)
+    empty_retries = 0
+    while (
+        empty_retries < EMPTY_RETRIES
+        and upstream.status_code == 200
+        and _is_empty_stop(upstream.content)
+    ):
+        empty_retries += 1
+        upstream = await _post_with_retry(upstream_url, prepared, headers)
+    provider = _provider_name(upstream.content)
+    STATS["provider"] = provider
+    STATS["last_empty_retries"] = empty_retries
+    total = STATS["empty_retries_total"]
+    STATS["empty_retries_total"] = int(total) + empty_retries if isinstance(total, int) else empty_retries
+    response_headers = {
+        "X-Bench-Empty-Retries": str(empty_retries),
+        "X-OpenRouter-Provider": provider,
+    }
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/json"),
+        headers=response_headers,
     )
 
 
@@ -138,6 +179,66 @@ async def _post_with_retry(
             await asyncio.sleep(delay)
         response = await CLIENT.post(url, content=body, headers=headers)
     return response
+
+
+def _inject_reasoning(body: bytes) -> bytes:
+    """Кладёт ``reasoning.max_tokens`` в тело, если вызывающий его не задал."""
+    if REASONING_MAX_TOKENS <= 0:
+        return body
+    try:
+        loaded: object = json.loads(body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return body
+    if not isinstance(loaded, dict) or "reasoning" in loaded:
+        return body
+    loaded["reasoning"] = {"max_tokens": REASONING_MAX_TOKENS}
+    return json.dumps(loaded).encode("utf-8")
+
+
+def _is_empty_stop(content: bytes) -> bool:
+    """Ответ без текста и без ``tool_calls`` при остановке, а не при обрезке."""
+    try:
+        loaded: object = json.loads(content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    if not isinstance(loaded, dict):
+        return False
+    choices = loaded.get("choices")
+    if not isinstance(choices, list) or len(choices) == 0:
+        return True
+    first = choices[0]
+    if not isinstance(first, dict):
+        return False
+    finish = str(first.get("finish_reason") or "")
+    if finish not in ("stop", ""):
+        return False
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return True
+    text = message.get("content")
+    if isinstance(text, str) and text.strip() != "":
+        return False
+    if isinstance(text, list) and len(text) > 0:
+        return False
+    tools = message.get("tool_calls")
+    return not isinstance(tools, list) or len(tools) == 0
+
+
+def _provider_name(content: bytes) -> str:
+    """Фактический провайдер OpenRouter из тела ответа."""
+    try:
+        loaded: object = json.loads(content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return ""
+    if not isinstance(loaded, dict):
+        return ""
+    provider = loaded.get("provider")
+    if isinstance(provider, str):
+        return provider
+    if isinstance(provider, dict):
+        name = provider.get("name") or provider.get("id")
+        return name if isinstance(name, str) else ""
+    return ""
 
 
 def _retry_delay(response: httpx.Response, attempt: int) -> float:

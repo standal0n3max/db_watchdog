@@ -21,6 +21,7 @@ Run record фиксирует версии OpenCode, образов и конф�
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -42,27 +43,25 @@ from db_pipeline.benchmark import (
     tree,
 )
 from db_pipeline.benchmark.config import BenchmarkConfig, load_config
+from db_pipeline.benchmark.graph.briefing import Briefing
 from db_pipeline.benchmark.models import CheckOutcome, as_str_list
 from db_pipeline.errors import PipelineError
 
-MODES = ("bare", "graph", "graph_v2")
+MODES = ("bare", "graph")
 
-# Руки, которым поднимается graph-контейнер и в которых MCP обязателен. Абляция
-# ``graph_v2`` — та же изоляция и тот же MCP-сервер, отличается только составом
-# включённых инструментов (только слой истории v2).
-GRAPH_MODES = ("graph", "graph_v2")
+# Руки, которым поднимается graph-контейнер. Сводка графа кладётся в промпт
+# до первого шага; свои вызовы MCP агента в вердикт не входят.
+GRAPH_MODES = ("graph",)
 
-# Варианты абзаца промпта про историю. ``directive`` — прежняя форма
-# («Before editing, use the MCP tools»); ``situational`` — мягкая: правку можно
-# начинать, как только причина локализована. Вариант пишется в manifest, чтобы
-# правки промпта и набора инструментов не смешивались вслепую.
+# Варианты абзаца промпта про историю. ``directive`` — короткая директива
+# с именами ``graph_*``; ``situational`` — та же сводка и те же имена, но
+# правку можно начинать, как только причина локализована.
 PROMPT_DIRECTIVE = "directive"
 PROMPT_SITUATIONAL = "situational"
 PROMPT_VARIANTS = (PROMPT_DIRECTIVE, PROMPT_SITUATIONAL)
 
-# Вариант по умолчанию: смягчённая формулировка слоя 3.2. Директивная форма
-# остаётся доступной флагом ``--prompt-variant directive`` для сравнения.
-PROMPT_DEFAULT = PROMPT_SITUATIONAL
+# Пилот фиксирует директивную форму. Ситуативная остаётся флагом.
+PROMPT_DEFAULT = PROMPT_DIRECTIVE
 
 
 @beartype
@@ -96,6 +95,7 @@ def run_one(
         "oracle": {"head": oracle["head"], "base": oracle["base"]},
         "effective": {"base": oracle["base"], "head": oracle["head"]},
         "prompt_variant": prompt_variant,
+        "experiment_id": cfg.experiment_id,
     }
 
     owns_session = smoke is None
@@ -118,9 +118,14 @@ def run_one(
         if owns_session:
             record["cleanup"] = smoke_session.close_session(active)
     record["integration"] = _integration(record, mode, phases, transcript, hidden, graph_id)
+    integration = record.get("integration")
+    if isinstance(integration, dict):
+        record["agent_mcp_calls"] = cast("dict[str, object]", integration).get(
+            "agent_mcp_calls", 0
+        )
+    # Вердикт тестов не переписывается. Ошибка интеграции остаётся флагом:
+    # раньше graph без вызова MCP получал FAIL поверх реального результата.
     if not _integration_ok(record.get("integration")):
-        record["pass"] = False
-        record["verdict"] = "FAIL"
         record["integration_failure"] = True
     _write_record(record, data)
     return record
@@ -180,12 +185,22 @@ def _run_in_container(
         hidden.extend(hidden_list)
         _phase(phases, "hide", CheckOutcome(ok=True, total=len(hidden)))
 
-        prompt = _prompt(public, mode, prompt_variant)
+        briefing_text = ""
+        if mode in GRAPH_MODES:
+            built = _task_briefing(public, oracle, data)
+            record["briefing"] = built.to_dict()
+            record["briefing_calls"] = [dict(item) for item in built.calls]
+            briefing_text = built.text
+        prompt = _prompt(public, mode, prompt_variant, briefing_text)
+        before_gateway = smoke_session.read_gateway_health(active)
         _phase(
             phases,
             "agent",
             _run_agent(container_id, prompt, cfg, mode, record, transcript, context),
         )
+        after_gateway = smoke_session.read_gateway_health(active)
+        record["openrouter_provider"] = str(after_gateway.get("provider") or "")
+        record["empty_retries"] = _empty_retry_delta(before_gateway, after_gateway)
 
         # Gate-ы и diff снимаются сразу после агента, пока скрытые тесты ещё
         # изъяты: иначе восстановление тестов выглядит как правка тестов агентом.
@@ -217,6 +232,7 @@ def _run_in_container(
         record["agent"] = transcript.totals()
         record["tool_counts"] = transcript.tool_counts()
         record["mcp_calls"] = mcp_calls(transcript)
+        record["agent_mcp_calls"] = record["mcp_calls"]
         record["generations"] = [asdict(g) for g in transcript.generations]
         record["tool_events"] = [asdict(t) for t in transcript.tools]
         record["completion"] = completion.classify(record, cfg.step_limit).to_dict()
@@ -281,18 +297,24 @@ def _integration(
     calls = mcp_calls(transcript)
     cutoff = record.get("cutoff")
     cutoff_ok = isinstance(cutoff, dict) and bool(cast("dict[str, object]", cutoff).get("ok"))
+    briefing = record.get("briefing")
+    briefing_ok = isinstance(briefing, dict) and bool(
+        cast("dict[str, object]", briefing).get("delivered")
+    )
     details: dict[str, object] = {
         "trace_published": trace_ok,
         "mcp_calls": calls,
+        "agent_mcp_calls": calls,
         "hidden_restored": phases.get("restore", {}).get("ok") is True,
         "graph_container": graph_id,
     }
     if mode in GRAPH_MODES:
         details["mcp_used"] = calls > 0
+        details["briefing_delivered"] = briefing_ok
         details["cutoff_enforced"] = cutoff_ok
     ok: bool = trace_ok and details["hidden_restored"] is True
     if mode in GRAPH_MODES:
-        ok = ok and calls > 0 and graph_id != "" and cutoff_ok
+        ok = ok and briefing_ok and graph_id != "" and cutoff_ok
     details["ok"] = ok
     return details
 
@@ -307,7 +329,7 @@ def _harness_env(cfg: BenchmarkConfig) -> str:
         {
             "step_limit": cfg.step_limit,
             "temperature": cfg.temperature,
-            "context_length": 32768,
+            "context_length": cfg.context_length,
             "max_tokens": cfg.max_tokens,
         }
     )
@@ -415,65 +437,52 @@ def _recreated(container_id: str, protected: list[str]) -> list[str]:
 
 
 @beartype
-def _prompt(public: dict[str, object], mode: str, variant: str = PROMPT_DIRECTIVE) -> str:
-    """Строит промпт: системные правила, плюс абзац про историю для graph-рук.
+def _prompt(
+    public: dict[str, object],
+    mode: str,
+    variant: str = PROMPT_DIRECTIVE,
+    briefing: str = "",
+) -> str:
+    """Строит промпт. Для graph добавляет сводку и имена инструментов ``graph_*``.
 
-    Абзац зависит от руки: ``graph_v2`` не упоминает выключенные v1-инструменты,
-    иначе агент звал бы недоступные инструменты. Вариант ``variant`` меняет
-    только рамку абзаца (директива против «по ситуации»), а состав инструментов
-    остаётся привязан к руке — поэтому эффект промпта и эффект набора
-    инструментов разводятся и не смешиваются в одном прогоне.
+    Сводка уже посчитана оркестратором на отсечке задачи. Вариант меняет только
+    короткую рамку: директива просит заглянуть в инструменты до правки,
+    ситуативная разрешает начать правку сразу после локализации.
     """
     from db_pipeline.benchmark import tasks as task_rules
 
     text = task_rules.build_prompt(public)
     if mode not in GRAPH_MODES:
         return text
-    return text + _history_paragraph(mode, variant)
+    return text + _history_paragraph(variant, briefing)
+
+
+# Имена в форме, в которой их регистрирует OpenCode: префикс сервера ``graph_``.
+_GRAPH_TOOL_NAMES = (
+    "graph_find_code_symbols, graph_read_versioned_source, "
+    "graph_search_git_history, graph_symbol_history, graph_tests_to_code, "
+    "graph_similar_fixes, graph_find_error_origin"
+)
 
 
 @beartype
-def _history_paragraph(mode: str, variant: str) -> str:
-    """Абзац про MCP-историю: по ситуации, для конкретного набора инструментов.
-
-    ``directive`` повторяет прежнюю форму («Before editing, use the MCP tools»),
-    ``situational`` мягче: правку можно начинать, как только причина
-    локализована, а к инструментам возвращаться по необходимости.
-    """
+def _history_paragraph(variant: str, briefing: str) -> str:
+    """Сводка графа и короткий абзац с именами ``graph_*``."""
+    names = f"Call them by these names: {_GRAPH_TOOL_NAMES}."
     if variant == PROMPT_SITUATIONAL:
-        opening = (
-            "\n\nHistory tools are available when you need them, and can save "
-            "guessing: "
-        )
-        closing = (
-            " Start editing as soon as you have localized the cause, and come "
-            "back to the tools if you need more history. Any revision the tools "
-            "return is at or before the cutoff commit."
+        frame = (
+            "\n\nHistory tools are available when you need them. "
+            + names
+            + " Start editing as soon as you have localized the cause."
         )
     else:
-        opening = (
+        frame = (
             "\n\nBefore editing, use the MCP tools to locate the relevant code "
-            "and its history: "
+            "and its history. " + names
         )
-        closing = (
-            " Any revision the tools return is at or before the cutoff commit."
-        )
-    if mode == "graph_v2":
-        return opening + _V2_TOOL_INTENT + closing
-    return opening + _V1_TOOL_INTENT + " " + _V2_TOOL_INTENT + closing
-
-
-# Описания намерения (не механики API): что даёт инструмент и когда он нужен.
-_V1_TOOL_INTENT = (
-    "find_code_symbols and read_versioned_source show the code at or before the "
-    "cutoff, and search_git_history searches past commits;"
-)
-_V2_TOOL_INTENT = (
-    "symbol_history shows how one function changed over time, tests_to_code maps "
-    "a regression test to the code it exercises, similar_fixes finds past "
-    "commits with a similar intent, and find_error_origin locates the code that "
-    "prints an error message."
-)
+    if briefing.strip() == "":
+        return frame
+    return "\n\nGraph briefing, computed before the first step:\n" + briefing + frame
 
 
 @beartype
@@ -486,14 +495,17 @@ def _run_agent(
     transcript: opencode.AgentTranscript,
     context: str,
 ) -> CheckOutcome:
+    import subprocess
+
     postgres.write_file(container_id, "/work/prompt.txt", prompt.encode("utf-8"))
     config = opencode.build_config(
         mode,
         provider=cfg.provider,
         model=cfg.model,
-        context_length=32768,
+        context_length=cfg.context_length,
         max_tokens=cfg.max_tokens,
         step_limit=cfg.step_limit,
+        temperature=cfg.temperature,
     )
     config_text = opencode.config_text(config)
     record["opencode_config_sha256"] = opencode.config_sha256(config)
@@ -513,9 +525,12 @@ def _run_agent(
     )
     command = opencode.run_command(agent_config, prompt)
     script = " ".join(_shell_quote(part) for part in command)
-    code, output = postgres.run_in_container(
-        container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
-    )
+    try:
+        code, output = postgres.run_in_container(
+            container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
+        )
+    except subprocess.TimeoutExpired:
+        return _timeout_outcome(record, cfg)
     parsed = opencode.parse_jsonl(output)
     retries = 0
     # Один ретрай, если прогон оборвал потолок ответа (``reason=length``): ответ
@@ -524,9 +539,13 @@ def _run_agent(
     while retries < LENGTH_RETRY_LIMIT and _truncated_by_length(parsed):
         retries += 1
         _reset_worktree(container_id)
-        code, output = postgres.run_in_container(
-            container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
-        )
+        try:
+            code, output = postgres.run_in_container(
+                container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
+            )
+        except subprocess.TimeoutExpired:
+            record["agent_length_retries"] = retries
+            return _timeout_outcome(record, cfg)
         parsed = opencode.parse_jsonl(output)
     transcript.generations = parsed.generations
     transcript.tools = parsed.tools
@@ -539,6 +558,60 @@ def _run_agent(
 
 
 LENGTH_RETRY_LIMIT = 1
+
+
+@beartype
+def _timeout_outcome(record: dict[str, object], cfg: BenchmarkConfig) -> CheckOutcome:
+    """Фиксирует таймаут агента, не теряя ``started`` у уже открытой записи."""
+    record["agent_timeout"] = True
+    record["agent_returncode"] = -1
+    record["completion"] = completion.classify(record, cfg.step_limit).to_dict()
+    return CheckOutcome(ok=False, tail="timeout")
+
+
+@beartype
+def _empty_retry_delta(before: dict[str, object], after: dict[str, object]) -> int:
+    """Сколько пустых ответов шлюз повторил за этот прогон."""
+    return max(0, _stat_int(after.get("empty_retries_total")) - _stat_int(before.get("empty_retries_total")))
+
+
+@beartype
+def _stat_int(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
+
+
+@beartype
+def _task_briefing(
+    public: dict[str, object],
+    oracle: dict[str, object],
+    data: Path | None,
+) -> Briefing:
+    """Сводка тем же GraphView, что и MCP: та же sqlite, base и запрещённый head.
+
+    Считается на хосте до старта агента. В функцию сводки уходит только
+    публичная задача; поля эталона нужны лишь чтобы открыть ту же отсечку.
+    """
+    from db_pipeline.benchmark.graph import briefing as briefing_module
+    from db_pipeline.benchmark.graph import view as graph_view
+    from db_pipeline.benchmark.graph.gitgraph import graph_db
+
+    try:
+        db = graph_db(data)
+        opened = graph_view.open_view(db, str(oracle["base"]), str(oracle["head"]))
+    except (OSError, PipelineError, sqlite3.Error) as exc:
+        return Briefing(
+            text=f"briefing unavailable: {type(exc).__name__}",
+            sha256="",
+            tokens=0,
+            calls=(),
+            delivered=False,
+        )
+    try:
+        return briefing_module.build_briefing(opened, public)
+    finally:
+        graph_view.close_view(opened)
 
 # Откат правок обрезанной попытки: сохраняются только сборочные артефакты.
 RESET_WORKTREE_COMMAND = "git checkout -- . && git clean -fd -e build"
@@ -662,6 +735,8 @@ def _publish_trace(
         end_ns=end,
         attributes={
             "langfuse.trace.name": f"{name} · {mode}",
+            "langfuse.trace.metadata.experiment_id": cfg.experiment_id,
+            "langfuse.trace.metadata.langfuse_project": cfg.langfuse_project,
             "langfuse.observation.input": json.dumps(
                 {"func": name, "mode": mode}, ensure_ascii=False
             ),

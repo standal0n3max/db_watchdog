@@ -20,6 +20,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import cast
 
 from beartype import beartype
 
@@ -204,6 +205,36 @@ def publish(config: OtelConfig, trace_id: str, payload: dict[str, object]) -> di
 
 
 @beartype
+def public_get(config: OtelConfig, path: str, query: str = "") -> dict[str, object]:
+    """Читает публичный API Langfuse. ``path`` начинается с ``/api/public``."""
+    if not config.enabled or config.url == "":
+        return {"ok": False, "error": "ключи не заданы"}
+    url = f"{config.url.rstrip('/')}{path}"
+    if query != "":
+        url = f"{url}?{query}"
+    request = urllib.request.Request(url, headers={"Authorization": _auth_header(config)})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = response.read().decode()
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "status": exc.code, "error": exc.read().decode()[:500]}
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return {"ok": False, "error": type(exc).__name__}
+    try:
+        loaded: object = json.loads(body or "{}")
+    except json.JSONDecodeError:
+        return {"ok": False, "status": status, "error": "не json"}
+    if isinstance(loaded, dict):
+        raw = cast("dict[object, object]", loaded)
+        payload: dict[str, object] = {str(key): value for key, value in raw.items()}
+        payload["ok"] = True
+        payload["status"] = status
+        return payload
+    return {"ok": True, "status": status, "data": loaded}
+
+
+@beartype
 def health(config: OtelConfig) -> tuple[bool, str]:
     url = config.url.rstrip("/")
     try:
@@ -224,6 +255,58 @@ def health(config: OtelConfig) -> tuple[bool, str]:
     except Exception as exc:  # noqa: BLE001
         return False, f"{url}: {type(exc).__name__} {exc}"
     return True, url
+
+
+@beartype
+def list_projects(config: OtelConfig) -> list[dict[str, str]]:
+    """Проекты ключа: ``GET /api/public/projects`` (Basic auth)."""
+    if not config.enabled or config.url == "":
+        return []
+    request = urllib.request.Request(
+        f"{config.url.rstrip('/')}/api/public/projects",
+        headers={"Authorization": _auth_header(config)},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read().decode()
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError):
+        return []
+    try:
+        loaded: object = json.loads(body or "{}")
+    except json.JSONDecodeError:
+        return []
+    rows: object = loaded
+    if isinstance(loaded, dict):
+        rows = cast("dict[str, object]", loaded).get("data", [])
+    if not isinstance(rows, list):
+        return []
+    found: list[dict[str, str]] = []
+    for item in cast("list[object]", rows):
+        if not isinstance(item, dict):
+            continue
+        row = cast("dict[str, object]", item)
+        found.append(
+            {
+                "id": str(row.get("id") or ""),
+                "name": str(row.get("name") or ""),
+            }
+        )
+    return found
+
+
+@beartype
+def project_matches(config: OtelConfig, expected: str) -> tuple[bool, str]:
+    """Имя проекта ключа совпадает с ``expected``. Пустое имя — отказ."""
+    if expected == "":
+        return False, "BENCH_LANGFUSE_PROJECT не задан"
+    projects = list_projects(config)
+    if len(projects) == 0:
+        return False, "список проектов пуст или недоступен"
+    names = [item["name"] for item in projects]
+    if expected in names:
+        matched = next(item for item in projects if item["name"] == expected)
+        return True, matched["id"]
+    return False, "ключ ведёт в проект " + ", ".join(names)
 
 
 @beartype

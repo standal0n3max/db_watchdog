@@ -11,6 +11,8 @@
 
 Категории API-отказов не должны попадать в McNemar: иначе измеряется надёжность
 шлюза, а не качество графа. В пары идут только ``ok`` и ``self_stop_empty``.
+``length_partial`` (ответ обрезан, но текст ненулевой) считается отдельно и в
+пары не входит: это не полный ответ модели.
 
 Признаки берутся из run record: число генераций, ``reason`` последней генерации,
 маркер бюджетной ошибки в ``agent_jsonl`` и наличие изменяющего инструмента в
@@ -44,8 +46,10 @@ OUTCOMES = (
     "infra_fail_truncated",
     "infra_fail_wall",
     "length",
+    "length_partial",
     "step_limit",
     "self_stop_empty",
+    "timeout",
     "crash_unknown",
 )
 
@@ -76,6 +80,14 @@ def classify(record: dict[str, object], step_limit: int = 0) -> Completion:
     Порядок проверок: отсутствие генераций → потолок ответа → бюджет →
     лимит шагов → самоостановка без правки → успех.
     """
+    if record.get("agent_timeout") is True:
+        generations = _generations(record)
+        return Completion(
+            outcome="timeout",
+            generations=len(generations),
+            reason="timeout",
+            detail="агент не уложился в таймаут",
+        )
     generations = _generations(record)
     jsonl = str(record.get("agent_jsonl") or "")
     budget = _has_budget_error(jsonl)
@@ -98,6 +110,13 @@ def classify(record: dict[str, object], step_limit: int = 0) -> Completion:
             generations=len(generations),
             reason=last_reason,
             detail="последняя генерация обрезана потолком ответа",
+        )
+    if last_reason == "length" and output_tokens > 0:
+        return Completion(
+            outcome="length_partial",
+            generations=len(generations),
+            reason=last_reason,
+            detail="ответ обрезан, но текст ненулевой",
         )
     if budget:
         return Completion(

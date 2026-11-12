@@ -19,31 +19,24 @@ from beartype import beartype
 
 from db_pipeline.errors import PipelineError
 
-# Потолок ответа модели. 4096 не влезал в остаток кредитов ключа OpenRouter и
-# приводил к отказу с первой секунды (``reason`` = ``length``/402): генерации не
-# было вовсе. 2048 проходит, а один ретрай на ``length`` добирает обрезанное.
-DEFAULT_MAX_TOKENS = 2048
+# Потолок ответа модели. 2048 вместе с reasoning часто давал пустой ответ:
+# рассуждение съедало весь бюджет. 8192 оставляет место и ответу, и вызову
+# инструмента; reasoning отдельно режется шлюзом.
+DEFAULT_MAX_TOKENS = 8192
 
 # Реальный лимит шагов агента: попадает в ``agent.build.steps`` эффективного
 # конфига. ``opencode run`` собственного флага лимита не имеет.
 DEFAULT_STEP_LIMIT = 80
 
-# Руки прогона. ``graph`` подключает оба слоя инструментов графа (v1 и v2),
-# ``graph_v2`` — это абляция: остаётся только слой истории v2, а три
-# v1-инструмента выключены в конфиге.
-MODES = ("bare", "graph", "graph_v2")
+# Длина контекста по умолчанию. Реальное значение берётся из
+# ``BENCH_CONTEXT_LENGTH`` и сверяется с карточкой модели OpenRouter.
+DEFAULT_CONTEXT_LENGTH = 32768
+
+# Руки прогона. ``graph`` подключает MCP графа, ``bare`` — нет.
+MODES = ("bare", "graph")
 
 # Руки, которым нужен MCP-сервер графа в сети прогона.
-GRAPH_MODES = ("graph", "graph_v2")
-
-# Инструменты v1, выключаемые в абляции ``graph_v2``. Имена даны в форме
-# ``<сервер>_<инструмент>``: OpenCode регистрирует инструменты MCP с префиксом
-# сервера, поэтому именно так они адресуются в карте ``tools``.
-V1_MCP_TOOLS = (
-    "graph_find_code_symbols",
-    "graph_read_versioned_source",
-    "graph_search_git_history",
-)
+GRAPH_MODES = ("graph",)
 
 
 @beartype
@@ -52,7 +45,7 @@ class AgentConfig:
     provider: str = "pgpro"
     model: str = ""
     temperature: float = 0.0
-    context_length: int = 32768
+    context_length: int = DEFAULT_CONTEXT_LENGTH
     max_tokens: int = DEFAULT_MAX_TOKENS
     step_limit: int = DEFAULT_STEP_LIMIT
     timeout: int = 1800
@@ -255,21 +248,22 @@ def build_config(
     mode: str,
     provider: str,
     model: str,
-    context_length: int = 32768,
+    context_length: int = DEFAULT_CONTEXT_LENGTH,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     step_limit: int = DEFAULT_STEP_LIMIT,
+    temperature: float = 0.0,
 ) -> dict[str, object]:
     """Строит эффективный OpenCode-конфиг: bare без MCP, graph с remote MCP.
 
     Секретов в конфиге нет: ключ провайдера подставляется из
-    ``POSTGRES_GYM_PROVIDER_KEY`` на стороне контейнера. ``graph``-режим
-    подключает все семь инструментов по Streamable HTTP с увеличенным
-    таймаутом; ``graph_v2`` — та же рука с одним отличием: три v1-инструмента
-    выключаются картой ``tools``, и у агента остаётся только слой истории v2.
+    ``POSTGRES_GYM_PROVIDER_KEY`` на стороне контейнера. ``graph`` подключает
+    все семь инструментов по Streamable HTTP с увеличенным таймаутом.
 
-    ``agent.build.steps`` задаёт реальный лимит ходов агента по умолчанию
-    (``build`` — primary-агент OpenCode); без него ``opencode run`` ходов не
-    ограничивает.
+    Формат сверен с OpenCode v1.18: ``agent.build.temperature`` задаёт
+    температуру primary-агента, ``agent.build.steps`` — лимит ходов,
+    ``agent.build.permission.task`` запрещает субагента ``task`` (его шаги и
+    MCP-вызовы в запись прогона не попадают). ``limit.output`` — потолок
+    ответа модели.
     """
     if mode not in MODES:
         raise PipelineError("opencode", f"режим {mode} неизвестен")
@@ -293,7 +287,13 @@ def build_config(
                 },
             }
         },
-        "agent": {"build": {"steps": step_limit}},
+        "agent": {
+            "build": {
+                "steps": step_limit,
+                "temperature": temperature,
+                "permission": {"task": {"*": "deny"}},
+            }
+        },
         "permission": {"webfetch": "deny", "external_directory": "deny"},
         "tools": {"webfetch": False},
     }
@@ -307,10 +307,6 @@ def build_config(
                 "timeout": 120000,
             }
         }
-    if mode == "graph_v2":
-        tools_map = cast("dict[str, object]", config["tools"])
-        for name in V1_MCP_TOOLS:
-            tools_map[name] = False
     return config
 
 

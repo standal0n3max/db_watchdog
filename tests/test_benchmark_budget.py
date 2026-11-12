@@ -59,6 +59,12 @@ class BudgetRequestTests(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertEqual(report.reason, "бюджет исчерпан")
 
+    def test_remaining_below_max_tokens_reserve_blocks(self) -> None:
+        self._use_response('{"data": {"limit": 1.0, "usage": 0.999, "limit_remaining": 0.001}}')
+        report = budget.check_budget("key", max_tokens=8192)
+        self.assertFalse(report.ok)
+        self.assertIn("max_tokens=8192", report.reason)
+
     def test_positive_remaining_passes(self) -> None:
         self._use_response('{"data": {"limit": 10.0, "usage": 4.0, "limit_remaining": 6.0}}')
         report = budget.check_budget("key")

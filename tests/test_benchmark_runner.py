@@ -1,8 +1,7 @@
-"""Промпт прогона: абзац про историю для graph-рук и вариант формулировки.
+"""Промпт прогона: сводка и имена ``graph_*`` для graph-руки.
 
-Проверяется ортогональность двух параметров слоя 3: состав инструментов задан
-рукой (``graph`` упоминает v1+v2, ``graph_v2`` — только v2), а рамка абзаца —
-вариантом (``directive`` против ``situational``). Docker, сеть и LLM не нужны.
+Рамка абзаца зависит от варианта (``directive`` против ``situational``).
+Docker, сеть и LLM не нужны.
 """
 
 from __future__ import annotations
@@ -34,22 +33,18 @@ class PromptVariantTests(unittest.TestCase):
         )
         self.assertEqual(directive, situational)
 
-    def test_graph_mentions_v1_and_v2_tools(self) -> None:
+    def test_graph_mentions_prefixed_tools(self) -> None:
         text = runner._prompt(  # pyright: ignore[reportPrivateUsage]
-            PUBLIC, "graph", runner.PROMPT_SITUATIONAL
+            PUBLIC, "graph", runner.PROMPT_DIRECTIVE, "briefing body"
         )
-        for name in ("find_code_symbols", "search_git_history", "symbol_history"):
+        for name in (
+            "graph_find_code_symbols",
+            "graph_tests_to_code",
+            "graph_similar_fixes",
+            "graph_find_error_origin",
+        ):
             self.assertIn(name, text)
-
-    def test_graph_v2_omits_disabled_v1_tools(self) -> None:
-        """Промпт абляции не зовёт инструменты, выключенные в конфиге."""
-        text = runner._prompt(  # pyright: ignore[reportPrivateUsage]
-            PUBLIC, "graph_v2", runner.PROMPT_SITUATIONAL
-        )
-        for name in ("find_code_symbols", "read_versioned_source", "search_git_history"):
-            self.assertNotIn(name, text)
-        for name in ("symbol_history", "tests_to_code", "similar_fixes", "find_error_origin"):
-            self.assertIn(name, text)
+        self.assertIn("briefing body", text)
 
     def test_directive_and_situational_differ(self) -> None:
         directive = runner._prompt(  # pyright: ignore[reportPrivateUsage]
@@ -65,13 +60,16 @@ class PromptVariantTests(unittest.TestCase):
     def test_variant_does_not_change_tool_set(self) -> None:
         """Рамка промпта не должна менять набор упомянутых инструментов."""
         directive = runner._prompt(  # pyright: ignore[reportPrivateUsage]
-            PUBLIC, "graph_v2", runner.PROMPT_DIRECTIVE
+            PUBLIC, "graph", runner.PROMPT_DIRECTIVE
         )
         situational = runner._prompt(  # pyright: ignore[reportPrivateUsage]
-            PUBLIC, "graph_v2", runner.PROMPT_SITUATIONAL
+            PUBLIC, "graph", runner.PROMPT_SITUATIONAL
         )
-        for name in ("find_code_symbols", "symbol_history"):
+        for name in ("graph_find_code_symbols", "graph_symbol_history"):
             self.assertEqual(name in directive, name in situational)
+
+    def test_default_prompt_is_directive(self) -> None:
+        self.assertEqual(runner.PROMPT_DEFAULT, runner.PROMPT_DIRECTIVE)
 
 
 class PromptVariantValidationTests(unittest.TestCase):

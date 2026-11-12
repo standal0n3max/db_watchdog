@@ -302,7 +302,7 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 Эффективный конфиг OpenCode генерируется на каждый run и передаётся в контейнер, а не берётся из образа: `bare`-конфиг MCP не содержит, `graph`-конфиг подключает сервер графа как remote Streamable HTTP (`http://graph:8765/mcp`). Hash конфига пишется в manifest. Task-container не видит `OPENROUTER_API_KEY` — ключ живёт только в model-gateway, который проверяет allowlist модели и разрешает лишь OpenAI-compatible endpoints.
 
-Лимиты прогона сведены в `BenchmarkConfig` и попадают в manifest как `step_limit` (реальный `agent.build.steps`; флага лимита у `opencode run` нет) и `max_tokens` (потолок ответа модели, по умолчанию 2048: 4096 не вмещался в остаток кредитов ключа и обрывал генерацию с первой секунды). Перед batch `pairwise` проверяет ключ и остаток кредитов OpenRouter, а шлюз повторяет ответы 402/429 по `Retry-After`.
+Лимиты прогона сведены в `BenchmarkConfig` и попадают в manifest как `step_limit` (реальный `agent.build.steps`, по умолчанию 80; флага лимита у `opencode run` нет), `max_tokens` (потолок ответа модели, по умолчанию 8192) и `temperature` (пишется в `agent.build.temperature`). Субагент `task` запрещён обеим рукам. Перед batch `pairwise` проверяет, что кредитов хватает на запрос с `max_tokens=8192`. Шлюз повторяет ответы 402/429, ограничивает reasoning через `reasoning.max_tokens` и до двух раз повторяет пустой ответ (`stop` без текста и без `tool_calls`). `BENCH_CONTEXT_LENGTH` сверяется в `doctor` с `context_length` модели на OpenRouter. `doctor` также сверяет `BENCH_LANGFUSE_PROJECT` с `GET /api/public/projects`.
 
 ### Граф кода
 
@@ -320,7 +320,7 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 Каждый ответ несёт revision, path, SHA-256 и метаданные отсечки. Пустой ответ пишет `not_found` или `outside_cutoff`. Любая возвращаемая revision обязана быть в `visible`.
 
-Ручка прогона `graph` подключает все семь инструментов. `graph_v2` остаётся абляцией на стороне OpenCode: три инструмента поиска по коду выключаются картой `tools`, сервер по-прежнему отдаёт все семь. Парный прогон различает руки флагом `--ablation`, вариант абзаца промпта — флагом `--prompt-variant` (`directive` против `situational`).
+Ручка прогона `graph` подключает все семь инструментов. Оркестратор до первого шага кладёт в промпт сводку графа (`graph/briefing.py`, бюджет около 1500 токенов): `tests_to_code` по `graded_by`, `find_error_origin` по `contract`, `similar_fixes` по первой строке `goal`. Имена в промпте и в описаниях инструментов — с префиксом `graph_`. Вариант абзаца — флаг `--prompt-variant` (`directive` по умолчанию, либо `situational`). Вызов MCP самим агентом пишется в `agent_mcp_calls` и вердикт тестов не переписывает. Интеграция graph-руки требует доставленную сводку и живую отсечку.
 
 В контейнер задачи уходит один файл потоковым `docker cp` (`container.copy_in`), переменная окружения одна: `BENCH_GRAPH_DB`. Git-клон не монтируется.
 
@@ -330,9 +330,9 @@ Smoke ведёт себя сам, без compose: на сессию подним
 
 Run records immutable: каждый прогон пишется отдельным файлом в `data/runs/` с session/run ID и не перезаписывает предыдущие. Сводный отчёт `data/reports/smoke-postgres.json` содержит pass@1, gates, test outcomes, latency, tokens, tool counts, MCP calls, effective base/head, ссылки Langfuse и отчёт cleanup. На пяти задачах выводится только работоспособность E2E, не статистическая значимость эффекта графа.
 
-Модуль `benchmark/completion.py` помечает каждый прогон категорией (`ok`, `self_stop_empty`, `infra_fail_truncated`, `infra_fail_wall`, `length`, `step_limit`, `crash_unknown`). В пары McNemar идут только `ok` и `self_stop_empty`: отказы API считаются отдельным счётчиком, иначе измеряется надёжность шлюза, а не эффект графа. Лимит шагов берётся из manifest прогона, поэтому записи, дошедшие до `agent.build.steps`, классифицируются как `step_limit`, а не как успех.
+Модуль `benchmark/completion.py` помечает каждый прогон категорией (`ok`, `self_stop_empty`, `infra_fail_truncated`, `infra_fail_wall`, `length`, `length_partial`, `step_limit`, `timeout`, `crash_unknown`). В пары McNemar идут только `ok` и `self_stop_empty`. `length_partial` — последняя генерация обрезана, но текст ненулевой; она считается отдельно. Таймаут агента пишется категорией `timeout` и сохраняет `started`. `eval` и `causes` фильтруют записи по `experiment_id`, чтобы старые партии не смешивались с пилотом.
 
-Отчёт `build_report` содержит основное сравнение `bare` против `graph` и блок `ablation` (`graph` против `graph_v2`): первое отвечает, помогает ли граф, второе — вредит ли слой v1, когда `ripgrep` уже работает. По каждой руке сводятся pass, gates, токены, суммарное и медианное время, доля пустых diff и порядок вызовов MCP относительно первой правки.
+Отчёт `build_report` сравнивает `bare` и `graph`. Первичный разбор — ITT по реальному вердикту (`itt`). Вторичный per-protocol для graph — прогоны с `agent_mcp_calls` > 0. По задачам считается знаковый тест (`sign_test_by_task`), потому что повторы одной задачи зависимы. По каждой руке сводятся pass, gates, токены, суммарное и медианное время, доля пустых diff и порядок вызовов MCP относительно первой правки.
 
 Документация: [docs/protocol.md](docs/protocol.md), [docs/isolation.md](docs/isolation.md), [docs/langfuse.md](docs/langfuse.md), [docs/graph-cutoff.md](docs/graph-cutoff.md), [docs/smoke.md](docs/smoke.md), [docs/provenance.md](docs/provenance.md), [docs/release.md](docs/release.md), [docs/smoke-fact-report-2026-11-11.md](docs/smoke-fact-report-2026-11-11.md).
 
