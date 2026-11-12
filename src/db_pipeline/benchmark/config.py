@@ -99,7 +99,7 @@ def load_config() -> BenchmarkConfig:
         context_length=int(_env("BENCH_CONTEXT_LENGTH", str(DEFAULT_CONTEXT_LENGTH))),
         reasoning_max_tokens=int(_env("BENCH_REASONING_MAX_TOKENS", "1024")),
         experiment_id=_env("BENCH_EXPERIMENT_ID"),
-        langfuse_project=_env("BENCH_LANGFUSE_PROJECT"),
+        langfuse_project=_env("BENCH_LANGFUSE_PROJECT", "diagnostic"),
         agent_timeout=int(_env("BENCH_AGENT_TIMEOUT", "1800")),
         container_timeout=int(_env("BENCH_CONTAINER_TIMEOUT", "3600")),
         network=_env("BENCH_NETWORK"),
