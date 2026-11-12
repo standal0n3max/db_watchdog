@@ -16,6 +16,7 @@ reverse patch на ``head_sha`` даёт buggy source; тестовый патч
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from beartype import beartype
@@ -49,6 +50,7 @@ def convert_one(instance: TaskInstance, data: Path | None = None) -> dict[str, o
         raise PipelineError("convert", f"{instance.instance_id}: пустые head/base sha")
     if instance.gold_patch.strip() == "":
         raise PipelineError("convert", f"{instance.instance_id}: пустой gold_patch")
+    assert_on_master(instance.base_sha, instance.instance_id, data)
 
     name = func_name(instance)
     statement = task_rules.clean_statement(instance.statement)
@@ -159,3 +161,34 @@ def load_public(name: str, data: Path | None = None) -> dict[str, object]:
 @beartype
 def load_oracle(name: str, data: Path | None = None) -> dict[str, object]:
     return as_dict(load_json_file(paths.oracle_dir(data) / f"{name}.json"), "oracle")
+
+
+@beartype
+def assert_on_master(base_sha: str, label: str, data: Path | None = None) -> None:
+    """База задачи обязана быть предком ``origin/master``.
+
+    Коммит, которого нет в клоне (синтетический sha в тестах), не проверяется.
+    Существующий коммит вне master в датасет не попадает: одна такая база
+    (``postgres__04c25af21c02``, только ``REL_17_STABLE``) из датасета убрана.
+    """
+    repo = paths.pg_clone(data)
+    git_dir = repo / ".git"
+    if not git_dir.exists():
+        return
+    exists = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "-e", f"{base_sha}^{{commit}}"],
+        capture_output=True,
+        check=False,
+    )
+    if exists.returncode != 0:
+        return
+    ancestor = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", base_sha, "origin/master"],
+        capture_output=True,
+        check=False,
+    )
+    if ancestor.returncode != 0:
+        raise PipelineError(
+            "convert",
+            f"{label}: base {base_sha} не предок origin/master",
+        )

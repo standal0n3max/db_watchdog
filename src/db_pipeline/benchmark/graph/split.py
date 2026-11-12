@@ -27,7 +27,6 @@ from typing import cast
 from beartype import beartype
 
 from db_pipeline.benchmark import paths
-from db_pipeline.benchmark.graph import prism
 
 DEV_TASKS = (
     "postgres__d764d61af316",
@@ -37,8 +36,8 @@ DEV_TASKS = (
     "postgres__9b917a93116e",
 )
 
-# Целевой размер tune: остальное уходит в holdout. При 300 задачах tune 15,
-# holdout 280 — с большим запасом к минимуму плана (30+).
+# Целевой размер tune: остальное уходит в holdout. После master-only гейта
+# задач 299: tune 15, holdout 279.
 TUNE_SIZE = 15
 
 HOLDOUT_FILE = "benchmark-holdout.txt"
@@ -61,21 +60,6 @@ class SplitTask:
 
 
 @beartype
-def _base_dates(data: Path | None) -> dict[str, str]:
-    """Дата базы по каждому sha: сначала корпус PRISM, иначе локальный git."""
-    archive = prism.load_archive()
-    dates: dict[str, str] = {}
-    if archive.git_corpus.is_file():
-        conn = prism.open_readonly(archive.git_corpus)
-        try:
-            for row in conn.execute("SELECT oid, committed_at FROM commits"):
-                dates[str(row["oid"])] = str(row["committed_at"])
-        finally:
-            conn.close()
-    return dates
-
-
-@beartype
 def _git_date(repo: Path, sha: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(repo), "show", "-s", "--format=%cI", sha],
@@ -88,9 +72,9 @@ def _git_date(repo: Path, sha: str) -> str:
 
 @beartype
 def _load(data: Path | None) -> list[SplitTask]:
-    """Читает 300 задач и подтягивает дату базы для стратификации по времени."""
-    corpus_dates = _base_dates(data)
+    """Читает задачи и подтягивает дату базы из git для стратификации по времени."""
     repo = paths.pg_clone(data)
+    has_git = (repo / ".git").exists()
     found: list[SplitTask] = []
     for path in sorted(paths.tasks_dir(data).glob("*.json")):
         name = path.stem
@@ -103,9 +87,7 @@ def _load(data: Path | None) -> list[SplitTask]:
             oracle: object = json.loads(oracle_path.read_text(encoding="utf-8"))
             if isinstance(oracle, dict):
                 base_sha = str(cast("dict[str, object]", oracle).get("base", ""))
-        base_date = corpus_dates.get(base_sha, "")
-        if base_date == "" and base_sha != "" and (repo / ".git").exists():
-            base_date = _git_date(repo, base_sha)
+        base_date = _git_date(repo, base_sha) if base_sha != "" and has_git else ""
         found.append(
             SplitTask(name=name, area=area, base_sha=base_sha, base_date=base_date)
         )
