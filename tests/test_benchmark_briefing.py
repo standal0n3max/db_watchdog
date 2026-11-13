@@ -20,6 +20,13 @@ class BriefingSymbolTests(unittest.TestCase):
         self.assertIn("INT4OID", names)
         self.assertNotIn("JSON", names)
 
+    def test_mentioned_paths_drop_line_numbers(self) -> None:
+        text = "- getBaseType function src/backend/parser/parse_expr.c:4124"
+        self.assertEqual(
+            briefing.mentioned_paths(text),
+            ["src/backend/parser/parse_expr.c"],
+        )
+
     def test_expected_and_sql_collapse_to_one_stem(self) -> None:
         graded = [
             "src/test/regress/expected/sqljson.out",

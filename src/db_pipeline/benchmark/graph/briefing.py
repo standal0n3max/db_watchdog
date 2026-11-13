@@ -162,6 +162,8 @@ def mentioned_paths(text: str) -> list[str]:
     found: list[str] = []
     for token in text.replace(",", " ").replace(";", " ").split():
         cleaned = token.strip("`'\"()[]")
+        if ":" in cleaned:
+            cleaned = cleaned.split(":", 1)[0]
         if not cleaned.startswith(("src/", "contrib/", "doc/")):
             continue
         if cleaned not in found:
