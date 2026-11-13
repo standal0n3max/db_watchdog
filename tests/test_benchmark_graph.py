@@ -126,8 +126,10 @@ class GraphViewTests(unittest.TestCase):
         found = view.find_code_symbols(self.view, "do_thing")
         rows = self._rows(found)
         self.assertGreater(len(rows), 0)
-        self.assertTrue(all(row["revision"] == self.base for row in rows))
-        source = view.read_versioned_source(self.view, self.base, "src/backend/x.c")
+        self.assertTrue(all(self.base.startswith(str(row["revision"])) for row in rows))
+        self.assertTrue(all("sha256" not in row for row in rows))
+        self.assertNotIn("\n", view.compact_text(found))
+        source = view.read_versioned_source(self.view, str(rows[0]["revision"]), "src/backend/x.c")
         text = str(self._rows(source)[0]["content"])
         self.assertIn("do_thing", text)
         self.assertNotIn("CANARY_", text)
@@ -145,10 +147,15 @@ class GraphViewTests(unittest.TestCase):
         for payload in payloads:
             rows = self._rows(payload)
             self.assertGreater(len(rows), 0, payload)
+            self.assertIn("cutoff", payload)
             for row in rows:
+                self.assertNotIn("cutoff", row)
+                self.assertNotIn("sha256", row)
                 revision = str(row.get("revision") or row.get("sample_revision") or "")
                 if revision != "":
-                    self.assertIn(revision, self.view.visible)
+                    self.assertTrue(
+                        any(full.startswith(revision) for full in self.view.visible)
+                    )
 
     def test_cochange_weight_and_symbol_change(self) -> None:
         payload = view.tests_to_code(self.view, "src/test/regress/sql/t.sql")

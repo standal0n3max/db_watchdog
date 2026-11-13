@@ -186,12 +186,13 @@ def _fix_lines(view: GraphView, payload: dict[str, object]) -> list[str]:
 
 @beartype
 def _changed_files(view: GraphView, revision: str) -> list[str]:
-    if revision == "":
+    oid = graph_view.resolve_oid(view, revision)
+    if oid == "":
         return []
     with view.lock:
         rows = view.conn.execute(
             "SELECT path FROM file_change WHERE oid = ? ORDER BY path",
-            (revision,),
+            (oid,),
         ).fetchall()
     found: list[str] = []
     for row in rows:

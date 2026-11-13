@@ -70,13 +70,13 @@ def serve() -> None:
 @beartype
 def _register(server: MCPServer, opened: GraphView) -> None:
     @server.tool()
-    def find_code_symbols(name: str, limit: int = 20) -> dict[str, object]:
+    def find_code_symbols(name: str, limit: int = 10) -> str:
         """Locate C symbols by name. Call this tool as ``graph_find_code_symbols``.
 
         ``name`` is a bare identifier such as ``heap_insert`` (not a path).
         Every revision is an ancestor of base_sha. ``limit`` caps the hits.
         """
-        return graph_view.find_code_symbols(opened, name, limit)
+        return graph_view.compact_text(graph_view.find_code_symbols(opened, name, limit))
 
     @server.tool()
     def read_versioned_source(
@@ -86,7 +86,7 @@ def _register(server: MCPServer, opened: GraphView) -> None:
         limit: int = 8192,
         start_line: int | None = None,
         end_line: int | None = None,
-    ) -> dict[str, object]:
+    ) -> str:
         """Read a source fragment at a pinned revision. Call it as
         ``graph_read_versioned_source``.
 
@@ -94,21 +94,23 @@ def _register(server: MCPServer, opened: GraphView) -> None:
         repository-relative. ``start_line``/``end_line`` (1-based) take priority
         and return at most about 400 lines; a longer span sets ``truncated``.
         """
-        return graph_view.read_versioned_source(
-            opened, revision, path, offset, limit, start_line, end_line
+        return graph_view.compact_text(
+            graph_view.read_versioned_source(
+                opened, revision, path, offset, limit, start_line, end_line
+            )
         )
 
     @server.tool()
-    def search_git_history(query: str, limit: int = 20) -> dict[str, object]:
+    def search_git_history(query: str, limit: int = 10) -> str:
         """Search commit messages and hunks. Call this tool as
         ``graph_search_git_history``.
 
         ``query`` is free text. Results stay within ancestors of base_sha.
         """
-        return graph_view.search_git_history(opened, query, limit)
+        return graph_view.compact_text(graph_view.search_git_history(opened, query, limit))
 
     @server.tool()
-    def symbol_history(path: str, name: str, limit: int = 20) -> dict[str, object]:
+    def symbol_history(path: str, name: str, limit: int = 10) -> str:
         """Show how one function changed over time. Call this tool as
         ``graph_symbol_history``.
 
@@ -116,37 +118,37 @@ def _register(server: MCPServer, opened: GraphView) -> None:
         the symbol line range and whether it is a definition. Nothing after
         the cutoff is returned.
         """
-        return graph_view.symbol_history(opened, path, name, limit)
+        return graph_view.compact_text(graph_view.symbol_history(opened, path, name, limit))
 
     @server.tool()
-    def tests_to_code(test: str, limit: int = 20) -> dict[str, object]:
+    def tests_to_code(test: str, limit: int = 10) -> str:
         """Map a regression test to the code it exercises. Call this tool as
         ``graph_tests_to_code``.
 
         ``test`` is a repository-relative test path. Results are ranked by
         co-change weight and limited to ancestors of base_sha.
         """
-        return graph_view.tests_to_code(opened, test, limit)
+        return graph_view.compact_text(graph_view.tests_to_code(opened, test, limit))
 
     @server.tool()
-    def similar_fixes(query: str, limit: int = 20) -> dict[str, object]:
+    def similar_fixes(query: str, limit: int = 10) -> str:
         """Find past commits with a similar intent. Call this tool as
         ``graph_similar_fixes``.
 
         ``query`` is free text, for example ``fix heap corruption on concurrent
         insert``. Only ancestors of base_sha are searched.
         """
-        return graph_view.similar_fixes(opened, query, limit)
+        return graph_view.compact_text(graph_view.similar_fixes(opened, query, limit))
 
     @server.tool()
-    def find_error_origin(message: str, limit: int = 20) -> dict[str, object]:
+    def find_error_origin(message: str, limit: int = 10) -> str:
         """Locate the code that prints an error message. Call this tool as
         ``graph_find_error_origin``.
 
         ``message`` is the literal string, for example ``cache lookup failed``.
         Placeholders such as ``%s`` are normalized. Results stay at base_sha.
         """
-        return graph_view.find_error_origin(opened, message, limit)
+        return graph_view.compact_text(graph_view.find_error_origin(opened, message, limit))
 
 
 if __name__ == "__main__":

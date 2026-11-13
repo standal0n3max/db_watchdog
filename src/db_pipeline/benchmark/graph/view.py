@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
 import threading
@@ -25,6 +26,8 @@ _MASS_COMMIT = 8
 # Потолок фрагмента по строкам: целый файл раньше уходил ответом в десятки тысяч
 # символов и съедал контекст агента.
 SOURCE_LINE_CAP = 400
+REVISION_PREFIX = 12
+DEFAULT_LIMIT = 10
 
 
 @beartype
@@ -134,13 +137,52 @@ def _empty(view: GraphView, reason: str) -> dict[str, object]:
 
 @beartype
 def _response(view: GraphView, results: list[dict[str, object]]) -> dict[str, object]:
-    """Отдаёт cutoff один раз на ответ, а не в каждой строке."""
+    """Отдаёт cutoff один раз. В строках нет sha256, пустых полей и полного oid."""
     cleaned: list[dict[str, object]] = []
     for item in results:
-        row = dict(item)
-        row.pop("cutoff", None)
-        cleaned.append(row)
+        row = _present_row(item)
+        if len(row) > 0:
+            cleaned.append(row)
     return {"results": cleaned, "cutoff": _meta(view)}
+
+
+_REVISION_KEYS = frozenset({"revision", "sample_revision"})
+
+
+@beartype
+def _present_row(item: dict[str, object]) -> dict[str, object]:
+    row: dict[str, object] = {}
+    for key, value in item.items():
+        if key in ("sha256", "cutoff"):
+            continue
+        if value is None or value == "":
+            continue
+        if key in _REVISION_KEYS and isinstance(value, str):
+            row[key] = value[:REVISION_PREFIX]
+            continue
+        row[key] = value
+    return row
+
+
+@beartype
+def compact_text(payload: dict[str, object]) -> str:
+    """JSON без отступов: MCP SDK иначе печатает dict с ``indent=2``."""
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+@beartype
+def resolve_oid(view: GraphView, revision: str) -> str:
+    """Полный oid по точному значению или уникальному префиксу."""
+    if revision == "":
+        return ""
+    if revision in view.visible or revision in (view.base_sha, view.head_sha):
+        return revision
+    matches = [oid for oid in view.visible if oid.startswith(revision)]
+    if view.base_sha.startswith(revision) and view.base_sha not in matches:
+        matches.append(view.base_sha)
+    if len(matches) == 1:
+        return matches[0]
+    return ""
 
 
 @beartype
@@ -149,7 +191,7 @@ def _allows(view: GraphView, oid: str) -> bool:
 
 
 @beartype
-def find_code_symbols(view: GraphView, name: str, limit: int = 20) -> dict[str, object]:
+def find_code_symbols(view: GraphView, name: str, limit: int = DEFAULT_LIMIT) -> dict[str, object]:
     """Символы дерева базы: revision всегда равен ``base_sha``."""
     with view.lock:
         exact = _symbol_rows(view, name, exact=True)
@@ -230,10 +272,13 @@ def read_versioned_source(
     end_line: int | None = None,
 ) -> dict[str, object]:
     """Фрагмент файла: дерево базы либо blob из ``file_change`` окна."""
-    if not _allows(view, revision):
+    resolved = resolve_oid(view, revision)
+    if resolved == "":
+        return _empty(view, "not_found")
+    if not _allows(view, resolved):
         return _empty(view, "outside_cutoff")
     with view.lock:
-        blob = _blob_for(view, revision, path)
+        blob = _blob_for(view, resolved, path)
         if blob is None:
             return _empty(view, "not_found")
         digest, content = blob
@@ -242,7 +287,7 @@ def read_versioned_source(
         view,
         [
             {
-                "revision": revision,
+                "revision": resolved,
                 "path": path,
                 "sha256": digest,
                 "size": len(content),
@@ -340,7 +385,7 @@ def _offset_of_line(lines: list[bytes], number: int) -> int:
 
 
 @beartype
-def search_git_history(view: GraphView, query: str, limit: int = 20) -> dict[str, object]:
+def search_git_history(view: GraphView, query: str, limit: int = DEFAULT_LIMIT) -> dict[str, object]:
     """FTS по сообщениям видимых коммитов и ханкам окна."""
     match = _fts_query(query)
     with view.lock:
@@ -399,7 +444,7 @@ def _fts_query(query: str) -> str:
 
 
 @beartype
-def symbol_history(view: GraphView, path: str, name: str, limit: int = 20) -> dict[str, object]:
+def symbol_history(view: GraphView, path: str, name: str, limit: int = DEFAULT_LIMIT) -> dict[str, object]:
     """Как менялся символ: от свежих видимых коммитов к старым."""
     with view.lock:
         rows = view.conn.execute(
@@ -457,7 +502,7 @@ def _prefer_change(candidate: sqlite3.Row, current: sqlite3.Row) -> bool:
 
 
 @beartype
-def tests_to_code(view: GraphView, test: str, limit: int = 20) -> dict[str, object]:
+def tests_to_code(view: GraphView, test: str, limit: int = DEFAULT_LIMIT) -> dict[str, object]:
     """Co-change на запросе: вес 1/n, коммиты больше 8 путей отброшены."""
     with view.lock:
         touched = view.conn.execute(
@@ -518,7 +563,7 @@ def _paths_by_commit(view: GraphView, oids: list[str]) -> dict[str, list[str]]:
 
 
 @beartype
-def similar_fixes(view: GraphView, query: str, limit: int = 20) -> dict[str, object]:
+def similar_fixes(view: GraphView, query: str, limit: int = DEFAULT_LIMIT) -> dict[str, object]:
     """Похожие правки: FTS по сообщениям только видимых коммитов."""
     match = _fts_query(query)
     with view.lock:
@@ -551,7 +596,7 @@ def similar_fixes(view: GraphView, query: str, limit: int = 20) -> dict[str, obj
 
 
 @beartype
-def find_error_origin(view: GraphView, message: str, limit: int = 20) -> dict[str, object]:
+def find_error_origin(view: GraphView, message: str, limit: int = DEFAULT_LIMIT) -> dict[str, object]:
     """Откуда печатается ошибка: строки текущего дерева базы, не чужого."""
     wanted = normalize_message(message)
     tokens = [token for token in _TOKEN_RE.findall(wanted) if len(token) >= 3]
