@@ -744,7 +744,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--prompt-variant",
         choices=PROMPT_VARIANTS,
         default=PROMPT_DEFAULT,
-        help="формулировка абзаца об инструментах: directive (механика API) или situational (интент)",
+        help="формулировка абзаца об инструментах: directive (нейтральная) или situational",
     )
     pairwise_parser.set_defaults(handler=cmd_pairwise)
 

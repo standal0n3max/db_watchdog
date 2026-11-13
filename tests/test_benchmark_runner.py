@@ -54,7 +54,8 @@ class PromptVariantTests(unittest.TestCase):
             PUBLIC, "graph", runner.PROMPT_SITUATIONAL
         )
         self.assertNotEqual(directive, situational)
-        self.assertIn("Before editing, use the MCP tools", directive)
+        self.assertIn("Graph tools are available", directive)
+        self.assertNotIn("Before editing", directive)
         self.assertIn("Start editing as soon as", situational)
 
     def test_variant_does_not_change_tool_set(self) -> None:

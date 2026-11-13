@@ -53,14 +53,16 @@ MODES = ("bare", "graph")
 # до первого шага; свои вызовы MCP агента в вердикт не входят.
 GRAPH_MODES = ("graph",)
 
-# Варианты абзаца промпта про историю. ``directive`` — короткая директива
-# с именами ``graph_*``; ``situational`` — та же сводка и те же имена, но
-# правку можно начинать, как только причина локализована.
+# Варианты абзаца промпта про историю. ``directive`` — нейтральная рамка
+# «graph tools are available» без требования звать инструменты до правки;
+# ``situational`` оставляет ту же сводку и те же имена, но просит начать
+# правку, как только причина локализована.
 PROMPT_DIRECTIVE = "directive"
 PROMPT_SITUATIONAL = "situational"
 PROMPT_VARIANTS = (PROMPT_DIRECTIVE, PROMPT_SITUATIONAL)
+GRAPH_FRAME = "Graph tools are available."
 
-# Пилот фиксирует директивную форму. Ситуативная остаётся флагом.
+# Пилот фиксирует нейтральную форму. Ситуативная остаётся флагом.
 PROMPT_DEFAULT = PROMPT_DIRECTIVE
 
 
@@ -86,12 +88,15 @@ def run_one(
     phases: dict[str, dict[str, object]] = {}
     transcript = opencode.AgentTranscript()
     hidden: list[str] = []
+    manifest = cfg.to_manifest()
+    manifest["prompt_variant"] = prompt_variant
+    manifest["graph_frame"] = _frame_sentence(prompt_variant)
     record: dict[str, object] = {
         "func": name,
         "mode": mode,
         "trace_id": trace_id,
         "started": started.isoformat(timespec="seconds"),
-        "manifest": cfg.to_manifest(),
+        "manifest": manifest,
         "oracle": {"head": oracle["head"], "base": oracle["base"]},
         "effective": {"base": oracle["base"], "head": oracle["head"]},
         "prompt_variant": prompt_variant,
@@ -450,8 +455,9 @@ def _prompt(
     """Строит промпт. Для graph добавляет сводку и имена инструментов ``graph_*``.
 
     Сводка уже посчитана оркестратором на отсечке задачи. Вариант меняет только
-    короткую рамку: директива просит заглянуть в инструменты до правки,
-    ситуативная разрешает начать правку сразу после локализации.
+    короткую рамку: директива называет инструменты доступными и не требует
+    звать их до правки, ситуативная разрешает начать правку сразу после
+    локализации.
     """
     from db_pipeline.benchmark import tasks as task_rules
 
@@ -470,6 +476,14 @@ _GRAPH_TOOL_NAMES = (
 
 
 @beartype
+def _frame_sentence(variant: str) -> str:
+    """Короткая рамка, которая попадает в manifest прогона."""
+    if variant == PROMPT_SITUATIONAL:
+        return "History tools are available when you need them."
+    return GRAPH_FRAME
+
+
+@beartype
 def _history_paragraph(variant: str, briefing: str) -> str:
     """Сводка графа и короткий абзац с именами ``graph_*``."""
     names = f"Call them by these names: {_GRAPH_TOOL_NAMES}."
@@ -480,10 +494,7 @@ def _history_paragraph(variant: str, briefing: str) -> str:
             + " Start editing as soon as you have localized the cause."
         )
     else:
-        frame = (
-            "\n\nBefore editing, use the MCP tools to locate the relevant code "
-            "and its history. " + names
-        )
+        frame = "\n\n" + GRAPH_FRAME + " " + names
     if briefing.strip() == "":
         return frame
     return "\n\nGraph briefing, computed before the first step:\n" + briefing + frame
