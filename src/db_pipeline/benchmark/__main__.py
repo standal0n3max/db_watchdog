@@ -580,7 +580,7 @@ def cmd_graph_briefing_audit(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark.graph import briefing_audit, split as split_module
 
     data = None if args.data is None else Path(args.data)
-    excluded = set(_task_names(args.exclude, data))
+    excluded = set(_task_names(args.exclude, data)) if len(args.exclude) > 0 else set()
     split = split_module.derive_split(data)
     names = [
         name
