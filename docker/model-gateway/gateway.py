@@ -51,6 +51,9 @@ EMPTY_RETRIES = int(os.environ.get("BENCH_GATEWAY_EMPTY_RETRIES", "2"))
 # Потолок reasoning OpenRouter. Поле ``reasoning.max_tokens`` (не вместе с
 # ``effort``): иначе reasoning съедает ``max_tokens`` и агент получает пустой
 # ответ. 0 отключает подстановку.
+# Сверено с OpenRouter (reasoning tokens): параметр единый для chat completions.
+# У DeepSeek это запрос, а не жёсткий clamp — reasoning входит в ``max_tokens``,
+# и провайдер может выйти за cap. Такие генерации считает запись прогона.
 REASONING_MAX_TOKENS = int(os.environ.get("BENCH_REASONING_MAX_TOKENS", "1024"))
 
 # Последний успешный ответ: провайдер OpenRouter и сумма пустых повторов.
@@ -196,13 +199,71 @@ def _inject_reasoning(body: bytes) -> bytes:
 
 
 def _is_empty_stop(content: bytes) -> bool:
-    """Ответ без текста и без ``tool_calls`` при остановке, а не при обрезке."""
+    """Ответ без текста и без ``tool_calls`` при остановке, а не при обрезке.
+
+    OpenCode ходит через ``@ai-sdk/openai-compatible`` со стримингом, поэтому
+    тело часто SSE, а не один JSON. Для не-стримингового ответа остаётся
+    прежняя ветка.
+    """
+    streamed = _sse_objects(content)
+    if streamed is not None:
+        return _sse_empty_stop(streamed)
+    loaded = _json_object(content)
+    if loaded is None:
+        return False
+    return _json_empty_stop(loaded)
+
+
+def _provider_name(content: bytes) -> str:
+    """Фактический провайдер OpenRouter из тела ответа или из чанка SSE."""
+    streamed = _sse_objects(content)
+    if streamed is not None:
+        for item in streamed:
+            name = _provider_from_mapping(item)
+            if name != "":
+                return name
+        return ""
+    loaded = _json_object(content)
+    if loaded is None:
+        return ""
+    return _provider_from_mapping(loaded)
+
+
+def _sse_objects(content: bytes) -> list[dict[str, object]] | None:
+    """Чанки ``data:`` либо ``None``, если тело не SSE."""
+    stripped = content.lstrip()
+    if not stripped.startswith(b"data:"):
+        return None
+    found: list[dict[str, object]] = []
+    for raw_line in stripped.decode("utf-8", "replace").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[len("data:") :].strip()
+        if data == "" or data == "[DONE]":
+            continue
+        try:
+            loaded: object = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(loaded, dict):
+            raw = loaded
+            found.append({str(key): value for key, value in raw.items()})
+    return found
+
+
+def _json_object(content: bytes) -> dict[str, object] | None:
     try:
         loaded: object = json.loads(content.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return False
+        return None
     if not isinstance(loaded, dict):
-        return False
+        return None
+    raw = loaded
+    return {str(key): value for key, value in raw.items()}
+
+
+def _json_empty_stop(loaded: dict[str, object]) -> bool:
     choices = loaded.get("choices")
     if not isinstance(choices, list) or len(choices) == 0:
         return True
@@ -215,6 +276,44 @@ def _is_empty_stop(content: bytes) -> bool:
     message = first.get("message")
     if not isinstance(message, dict):
         return True
+    return _message_is_empty(message)
+
+
+def _sse_empty_stop(chunks: list[dict[str, object]]) -> bool:
+    """Пустой stop: в дельтах нет текста и нет ``tool_calls``, финал — ``stop``."""
+    text = ""
+    tools = False
+    finish = ""
+    for chunk in chunks:
+        choices = chunk.get("choices")
+        if not isinstance(choices, list) or len(choices) == 0:
+            continue
+        first = choices[0]
+        if not isinstance(first, dict):
+            continue
+        reason = str(first.get("finish_reason") or "")
+        if reason not in ("", "null"):
+            finish = reason
+        payload = first.get("delta")
+        if not isinstance(payload, dict):
+            payload = first.get("message")
+        if not isinstance(payload, dict):
+            continue
+        if not _message_is_empty(payload):
+            content = payload.get("content")
+            if isinstance(content, str):
+                text += content
+            else:
+                return False
+            calls = payload.get("tool_calls")
+            if isinstance(calls, list) and len(calls) > 0:
+                tools = True
+    if finish != "stop":
+        return False
+    return text.strip() == "" and not tools
+
+
+def _message_is_empty(message: dict[str, object]) -> bool:
     text = message.get("content")
     if isinstance(text, str) and text.strip() != "":
         return False
@@ -224,14 +323,7 @@ def _is_empty_stop(content: bytes) -> bool:
     return not isinstance(tools, list) or len(tools) == 0
 
 
-def _provider_name(content: bytes) -> str:
-    """Фактический провайдер OpenRouter из тела ответа."""
-    try:
-        loaded: object = json.loads(content.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return ""
-    if not isinstance(loaded, dict):
-        return ""
+def _provider_from_mapping(loaded: dict[str, object]) -> str:
     provider = loaded.get("provider")
     if isinstance(provider, str):
         return provider

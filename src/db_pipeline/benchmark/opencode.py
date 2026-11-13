@@ -217,6 +217,18 @@ def first_edit_step(transcript: AgentTranscript) -> int:
 
 
 @beartype
+def reasoning_over_cap(transcript: AgentTranscript, cap: int) -> int:
+    """Сколько генераций превысили запрошенный ``reasoning.max_tokens``.
+
+    OpenRouter для DeepSeek не зажимает cap жёстко, поэтому превышение видно
+    только по фактическим ``reasoning`` токенам ответа.
+    """
+    if cap <= 0:
+        return 0
+    return sum(1 for generation in transcript.generations if generation.reasoning_tokens > cap)
+
+
+@beartype
 def agent_steps(transcript: AgentTranscript) -> int:
     """Число генераций без сводок компакции: по ним считается лимит шагов."""
     return sum(1 for generation in transcript.generations if not generation.compaction)

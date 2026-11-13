@@ -112,6 +112,15 @@ class NudgeDecisionTests(unittest.TestCase):
             opencode.should_nudge(self._transcript(session=""), 80, diff_empty=True, timed_out=False)
         )
 
+    def test_reasoning_over_cap_counts_only_excess(self) -> None:
+        transcript = opencode.AgentTranscript()
+        transcript.generations = [
+            opencode.Generation(message_id="a", reasoning_tokens=1024),
+            opencode.Generation(message_id="b", reasoning_tokens=4565),
+        ]
+        self.assertEqual(opencode.reasoning_over_cap(transcript, 1024), 1)
+        self.assertEqual(opencode.reasoning_over_cap(transcript, 0), 0)
+
     def test_step_limit_and_non_stop_block_nudge(self) -> None:
         self.assertFalse(
             opencode.should_nudge(self._transcript(), step_limit=1, diff_empty=True, timed_out=False)

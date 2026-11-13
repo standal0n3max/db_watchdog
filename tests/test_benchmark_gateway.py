@@ -48,6 +48,8 @@ class GatewayModule(Protocol):
 
     def _is_empty_stop(self, content: bytes) -> bool: ...
 
+    def _provider_name(self, content: bytes) -> str: ...
+
     def _inject_reasoning(self, body: bytes) -> bytes: ...
 
 
@@ -161,6 +163,31 @@ class GatewayRetryTests(unittest.TestCase):
         self.assertFalse(self.module._is_empty_stop(filled))  # pyright: ignore[reportPrivateUsage]
         self.assertFalse(self.module._is_empty_stop(tools))  # pyright: ignore[reportPrivateUsage]
         self.assertFalse(self.module._is_empty_stop(length))  # pyright: ignore[reportPrivateUsage]
+
+    def test_sse_empty_stop_tool_calls_and_text(self) -> None:
+        empty = (
+            b'data: {"provider":"DeepInfra","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n'
+            b"data: [DONE]\n"
+        )
+        text = (
+            b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":null}]}\n'
+            b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n'
+            b"data: [DONE]\n"
+        )
+        tools = (
+            b'data: {"choices":[{"delta":{"tool_calls":[{"id":"1"}]},"finish_reason":"tool_calls"}]}\n'
+            b"data: [DONE]\n"
+        )
+        self.assertTrue(self.module._is_empty_stop(empty))  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module._is_empty_stop(text))  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module._is_empty_stop(tools))  # pyright: ignore[reportPrivateUsage]
+        self.assertEqual(self.module._provider_name(empty), "DeepInfra")  # pyright: ignore[reportPrivateUsage]
+
+    def test_json_provider_still_read_from_body(self) -> None:
+        body = b'{"provider":"Together","choices":[{"finish_reason":"stop","message":{"content":"x"}}]}'
+        self.assertEqual(self.module._provider_name(body), "Together")  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module._is_empty_stop(body))  # pyright: ignore[reportPrivateUsage]
 
     def test_reasoning_cap_is_injected_once(self) -> None:
         import json
