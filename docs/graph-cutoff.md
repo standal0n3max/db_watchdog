@@ -26,7 +26,7 @@
 - `similar_fixes` — FTS по сообщениям видимых коммитов.
 - `find_error_origin` — `error_strings` текущего дерева, не чужой базы.
 
-Каждый ответ несёт revision, path, SHA-256 и cutoff metadata.
+Ответ компактный: без SHA-256 и пустых полей, `revision` — 12 символов, cutoff один раз на ответ. Дефолтный `limit` — 10.
 
 ## Отсечка
 
@@ -61,8 +61,8 @@ bare-конфиг MCP не содержит, graph-конфиг подключа
 
 Абзац про историю имеет два варианта формулировки (`--prompt-variant`):
 
-- `directive` — «Before editing, use the MCP tools»: инструменты обязательны
-  перед правкой;
+- `directive` — «Graph tools are available»: инструменты названы, вызов до
+  правки не требуется; текст рамки пишется в manifest как `graph_frame`;
 - `situational` — «Start editing as soon as you have localized the cause»:
   инструменты доступны по необходимости, правку можно начинать раньше.
 
