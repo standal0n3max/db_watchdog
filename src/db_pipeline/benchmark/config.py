@@ -42,6 +42,7 @@ class BenchmarkConfig:
     temperature: float
     context_length: int
     reasoning_max_tokens: int
+    empty_stop_nudges: int
     experiment_id: str
     langfuse_project: str
     agent_timeout: int
@@ -71,6 +72,7 @@ class BenchmarkConfig:
             "temperature": self.temperature,
             "context_length": self.context_length,
             "reasoning_max_tokens": self.reasoning_max_tokens,
+            "empty_stop_nudges": self.empty_stop_nudges,
             "experiment_id": self.experiment_id,
             "langfuse_project": self.langfuse_project,
             "agent_timeout": self.agent_timeout,
@@ -98,6 +100,7 @@ def load_config() -> BenchmarkConfig:
         temperature=float(_env("BENCH_TEMPERATURE", "0")),
         context_length=int(_env("BENCH_CONTEXT_LENGTH", str(DEFAULT_CONTEXT_LENGTH))),
         reasoning_max_tokens=int(_env("BENCH_REASONING_MAX_TOKENS", "1024")),
+        empty_stop_nudges=int(_env("BENCH_EMPTY_STOP_NUDGES", "1")),
         experiment_id=_env("BENCH_EXPERIMENT_ID"),
         langfuse_project=_env("BENCH_LANGFUSE_PROJECT", "diagnostic"),
         agent_timeout=int(_env("BENCH_AGENT_TIMEOUT", "1800")),

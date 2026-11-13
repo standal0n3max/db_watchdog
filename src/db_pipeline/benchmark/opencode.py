@@ -362,6 +362,10 @@ def _json_text(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)[:4000]
 
 
+# Одинаковый для обеих рук: сессия продолжается, если diff ещё пустой.
+NUDGE_PROMPT = "No files have been changed yet. Continue the task."
+
+
 @beartype
 def run_command(config: AgentConfig, prompt: str) -> list[str]:
     return [
@@ -375,6 +379,43 @@ def run_command(config: AgentConfig, prompt: str) -> list[str]:
         f"{config.provider}/{config.model}",
         prompt,
     ]
+
+
+@beartype
+def continue_command(config: AgentConfig, session_id: str, prompt: str) -> list[str]:
+    """Продолжает ту же сессию OpenCode: флаг ``--session`` есть в v1.18."""
+    command = run_command(config, prompt)
+    prompt_text = command.pop()
+    command.extend(["--session", session_id, prompt_text])
+    return command
+
+
+@beartype
+def append_transcript(base: AgentTranscript, extra: AgentTranscript) -> None:
+    """Дописывает события продолжения сессии, не затирая уже разобранные шаги."""
+    base.generations.extend(extra.generations)
+    base.tools.extend(extra.tools)
+    base.errors.extend(extra.errors)
+    base.raw_events += extra.raw_events
+    if base.session_id == "":
+        base.session_id = extra.session_id
+
+
+@beartype
+def should_nudge(
+    transcript: AgentTranscript,
+    step_limit: int,
+    diff_empty: bool,
+    timed_out: bool,
+) -> bool:
+    """Пустой stop и ещё есть шаги: можно один раз продолжить сессию."""
+    if timed_out or not diff_empty or transcript.session_id == "":
+        return False
+    if len(transcript.generations) == 0:
+        return False
+    if step_limit > 0 and agent_steps(transcript) >= step_limit:
+        return False
+    return transcript.generations[-1].reason == "stop"
 
 
 GRAPH_MCP_URL = "http://graph:8765/mcp"

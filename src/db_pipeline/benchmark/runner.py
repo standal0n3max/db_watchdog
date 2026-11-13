@@ -552,9 +552,11 @@ def _run_agent(
     transcript.tools = parsed.tools
     transcript.errors = parsed.errors
     transcript.raw_events = parsed.raw_events
+    transcript.session_id = parsed.session_id
     record["agent_returncode"] = code
     record["agent_length_retries"] = retries
     record["agent_jsonl"] = output
+    record["nudges"] = _nudge_empty_stop(container_id, agent_config, cfg, record, transcript)
     return CheckOutcome(ok=code == 0, tail=output[-2000:] if code != 0 else "")
 
 
@@ -566,8 +568,51 @@ def _timeout_outcome(record: dict[str, object], cfg: BenchmarkConfig) -> CheckOu
     """Фиксирует таймаут агента, не теряя ``started`` у уже открытой записи."""
     record["agent_timeout"] = True
     record["agent_returncode"] = -1
+    record["nudges"] = _stat_int(record.get("nudges"))
     record["completion"] = completion.classify(record, cfg.step_limit).to_dict()
     return CheckOutcome(ok=False, tail="timeout")
+
+
+@beartype
+def _nudge_empty_stop(
+    container_id: str,
+    agent_config: opencode.AgentConfig,
+    cfg: BenchmarkConfig,
+    record: dict[str, object],
+    transcript: opencode.AgentTranscript,
+) -> int:
+    """Один и тот же ход для bare и graph: продолжить сессию, если diff пустой."""
+    import subprocess
+
+    done = 0
+    while done < cfg.empty_stop_nudges and opencode.should_nudge(
+        transcript,
+        cfg.step_limit,
+        _diff_empty(container_id),
+        record.get("agent_timeout") is True,
+    ):
+        command = opencode.continue_command(
+            agent_config, transcript.session_id, opencode.NUDGE_PROMPT
+        )
+        script = " ".join(_shell_quote(part) for part in command)
+        try:
+            code, output = postgres.run_in_container(
+                container_id, script, timeout=cfg.agent_timeout, user=postgres.BENCH_USER
+            )
+        except subprocess.TimeoutExpired:
+            record["agent_timeout"] = True
+            break
+        extra = opencode.parse_jsonl(output)
+        opencode.append_transcript(transcript, extra)
+        record["agent_returncode"] = code
+        record["agent_jsonl"] = str(record.get("agent_jsonl") or "") + output
+        done += 1
+    return done
+
+
+@beartype
+def _diff_empty(container_id: str) -> bool:
+    return postgres.worktree_diff(container_id).strip() == ""
 
 
 @beartype

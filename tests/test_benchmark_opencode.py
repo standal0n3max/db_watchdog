@@ -85,6 +85,43 @@ class RunCommandTests(unittest.TestCase):
         self.assertIn("--format", command)
         self.assertEqual(command[command.index("--format") + 1], "json")
 
+    def test_continue_uses_same_session(self) -> None:
+        config = opencode.AgentConfig(provider="pgpro", model="bench")
+        command = opencode.continue_command(config, "ses_9", opencode.NUDGE_PROMPT)
+        self.assertEqual(command[command.index("--session") + 1], "ses_9")
+        self.assertEqual(command[-1], opencode.NUDGE_PROMPT)
+        self.assertIn("--model", command)
+
+
+class NudgeDecisionTests(unittest.TestCase):
+    def _transcript(self, reason: str = "stop", session: str = "ses") -> opencode.AgentTranscript:
+        transcript = opencode.AgentTranscript(session_id=session)
+        transcript.generations = [opencode.Generation(message_id="m", reason=reason)]
+        return transcript
+
+    def test_empty_stop_with_steps_left_is_nudged(self) -> None:
+        self.assertTrue(
+            opencode.should_nudge(self._transcript(), step_limit=80, diff_empty=True, timed_out=False)
+        )
+
+    def test_diff_or_timeout_or_missing_session_blocks_nudge(self) -> None:
+        ready = self._transcript()
+        self.assertFalse(opencode.should_nudge(ready, 80, diff_empty=False, timed_out=False))
+        self.assertFalse(opencode.should_nudge(ready, 80, diff_empty=True, timed_out=True))
+        self.assertFalse(
+            opencode.should_nudge(self._transcript(session=""), 80, diff_empty=True, timed_out=False)
+        )
+
+    def test_step_limit_and_non_stop_block_nudge(self) -> None:
+        self.assertFalse(
+            opencode.should_nudge(self._transcript(), step_limit=1, diff_empty=True, timed_out=False)
+        )
+        self.assertFalse(
+            opencode.should_nudge(
+                self._transcript(reason="length"), step_limit=80, diff_empty=True, timed_out=False
+            )
+        )
+
 
 class McpCallDetectionTests(unittest.TestCase):
     def _transcript(self, names: list[str]) -> opencode.AgentTranscript:
