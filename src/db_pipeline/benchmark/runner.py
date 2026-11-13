@@ -787,8 +787,7 @@ def _publish_trace(
     phases: dict[str, dict[str, object]],
     transcript: opencode.AgentTranscript,
 ) -> dict[str, object]:
-    start = telemetry.now_ns()
-    end = start + 1
+    start, end = _trace_window(transcript)
     root = telemetry.OtelSpan(
         name=f"{name} · {mode}",
         start_ns=start,
@@ -832,27 +831,24 @@ def _publish_trace(
             )
         )
     for generation in transcript.generations:
+        gen_start = telemetry.ms_to_ns(generation.started) if generation.started else start
+        gen_end = telemetry.ms_to_ns(generation.ended) if generation.ended else gen_start + 1
         children.append(
             telemetry.OtelSpan(
                 name="opencode:generation",
-                start_ns=start,
-                end_ns=end,
+                start_ns=gen_start,
+                end_ns=max(gen_end, gen_start + 1),
                 parent_id=root.span_id,
-                attributes={
-                    "langfuse.observation.type": "generation",
-                    "langfuse.observation.model.name": cfg.model,
-                    "langfuse.observation.input": generation.text[:2000],
-                    "langfuse.observation.usage_details": json.dumps(
-                        {
-                            "input": generation.input_tokens,
-                            "output": generation.output_tokens,
-                            "reasoning": generation.reasoning_tokens,
-                        }
-                    ),
-                    "langfuse.observation.cost_details": json.dumps(
-                        {"total": generation.cost}
-                    ),
-                },
+                attributes=telemetry.generation_attributes(
+                    cfg.model,
+                    generation.text,
+                    generation.input_tokens,
+                    generation.output_tokens,
+                    generation.reasoning_tokens,
+                    generation.cache_read,
+                    generation.cost,
+                    generation.compaction,
+                ),
             )
         )
     for tool in transcript.tools:
@@ -864,8 +860,8 @@ def _publish_trace(
                 parent_id=root.span_id,
                 attributes={
                     "langfuse.observation.type": "tool",
-                    "langfuse.observation.input": tool.input,
-                    "langfuse.observation.output": tool.output,
+                    "langfuse.observation.input": telemetry.clip_text(tool.input),
+                    "langfuse.observation.output": telemetry.clip_text(tool.output),
                     "langfuse.observation.metadata.status": tool.status,
                 },
             )
@@ -874,6 +870,30 @@ def _publish_trace(
     published = telemetry.publish(cfg.otel, trace_id, payload)
     published["expected_events"] = 1 + len(children)
     return published
+
+
+@beartype
+def _trace_window(transcript: opencode.AgentTranscript) -> tuple[int, int]:
+    """Реальные времена JSONL, а не один момент публикации трассы."""
+    stamps: list[int] = []
+    for generation in transcript.generations:
+        if generation.started > 0:
+            stamps.append(generation.started)
+        if generation.ended > 0:
+            stamps.append(generation.ended)
+    for tool in transcript.tools:
+        if tool.started > 0:
+            stamps.append(tool.started)
+        if tool.ended > 0:
+            stamps.append(tool.ended)
+    if len(stamps) == 0:
+        now = telemetry.now_ns()
+        return now, now + 1
+    start = telemetry.ms_to_ns(min(stamps))
+    end = telemetry.ms_to_ns(max(stamps))
+    if end <= start:
+        end = start + 1
+    return start, end
 
 
 @beartype

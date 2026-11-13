@@ -25,6 +25,7 @@ from typing import cast
 from beartype import beartype
 
 INGESTION_VERSION = "4"
+TRACE_TEXT_LIMIT = 4000
 
 
 @beartype
@@ -69,6 +70,50 @@ def new_trace_id() -> str:
 @beartype
 def _hex(size: int) -> str:
     return uuid.uuid4().hex[: size * 2]
+
+
+@beartype
+def clip_text(text: str, limit: int = TRACE_TEXT_LIMIT) -> str:
+    """Обрезает текст наблюдения: в трассу не кладётся весь JSONL."""
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+@beartype
+def generation_attributes(
+    model: str,
+    text: str,
+    input_tokens: int,
+    output_tokens: int,
+    reasoning_tokens: int,
+    cache_read: int,
+    cost: float,
+    compaction: bool,
+) -> dict[str, str]:
+    """Атрибуты generation span: текст, cache_read и метка компакции.
+
+    ``cache_read`` входит в ``usage_details``. Без него Langfuse показывает
+    только свежий input и занижает контекст. Метка компакции ставится только
+    на сводку.
+    """
+    attributes = {
+        "langfuse.observation.type": "generation",
+        "langfuse.observation.model.name": model,
+        "langfuse.observation.output": clip_text(text),
+        "langfuse.observation.usage_details": json.dumps(
+            {
+                "input": input_tokens,
+                "output": output_tokens,
+                "reasoning": reasoning_tokens,
+                "cache_read": cache_read,
+            }
+        ),
+        "langfuse.observation.cost_details": json.dumps({"total": cost}),
+    }
+    if compaction:
+        attributes["langfuse.observation.metadata.compaction"] = "true"
+    return attributes
 
 
 @beartype

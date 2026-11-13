@@ -7,6 +7,7 @@ Langfuse. Docker и сеть не нужны.
 
 from __future__ import annotations
 
+import json
 import unittest
 from typing import cast
 
@@ -103,6 +104,22 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(len(spans), 2)
         self.assertEqual(spans[0]["traceId"], "a" * 32)
         self.assertEqual(spans[1]["parentSpanId"], root.span_id)
+
+    def test_generation_attributes_carry_text_cache_and_compaction(self) -> None:
+        attributes = telemetry.generation_attributes(
+            "deepseek/deepseek-v4-flash",
+            "x" * 5000,
+            100,
+            20,
+            5,
+            23000,
+            0.01,
+            True,
+        )
+        self.assertEqual(len(attributes["langfuse.observation.output"]), 4000)
+        usage = json.loads(attributes["langfuse.observation.usage_details"])
+        self.assertEqual(usage["cache_read"], 23000)
+        self.assertEqual(attributes["langfuse.observation.metadata.compaction"], "true")
 
     def test_disabled_without_keys(self) -> None:
         config = telemetry.OtelConfig(url="http://x", public_key="", secret_key="")
