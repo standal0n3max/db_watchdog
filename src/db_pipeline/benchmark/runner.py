@@ -235,6 +235,7 @@ def _run_in_container(
         record["agent_mcp_calls"] = record["mcp_calls"]
         record["generations"] = [asdict(g) for g in transcript.generations]
         record["tool_events"] = [asdict(t) for t in transcript.tools]
+        record.update(opencode.metrics(transcript))
         record["completion"] = completion.classify(record, cfg.step_limit).to_dict()
         record["seconds"] = round((datetime.now(UTC) - started).total_seconds(), 1)
 

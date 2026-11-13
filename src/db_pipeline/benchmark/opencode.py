@@ -82,6 +82,9 @@ class Generation:
     cache_read: int = 0
     cache_write: int = 0
     text: str = ""
+    compaction: bool = False
+    started: int = 0
+    ended: int = 0
 
 
 @beartype
@@ -91,6 +94,7 @@ class AgentTranscript:
     tools: list[ToolCall] = field(default_factory=list[ToolCall])
     errors: list[str] = field(default_factory=list[str])
     raw_events: int = 0
+    session_id: str = ""
 
     def tool_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -110,34 +114,58 @@ class AgentTranscript:
         }
 
 
+# Синтетическое сообщение OpenCode v1.18 после сводки компакции.
+# Сверено с session/compaction.ts: user-part с ``synthetic`` и этим текстом.
+CONTINUE_MARKER = (
+    "Continue if you have next steps, or stop and ask for clarification "
+    "if you are unsure how to proceed."
+)
+
+# Инструменты, меняющие дерево. Совпадает с классификатором завершения.
+_EDIT_TOOLS = frozenset(
+    {"edit", "write", "patch", "multiedit", "apply_patch", "str_replace"}
+)
+
+
 @beartype
 def parse_jsonl(text: str) -> AgentTranscript:
+    """Разбирает JSONL ``opencode run --format json``.
+
+    Пара «сводка + синтетическое Continue» помечает генерацию компакции:
+    у неё нет ``step_finish`` у сообщения Continue, а предыдущая завершённая
+    генерация — это сводка. Такое сообщение в список генераций не входит.
+    """
     transcript = AgentTranscript()
+    events = _load_events(text)
+    transcript.raw_events = len(events)
+    continue_ids = _continue_message_ids(events)
     by_message: dict[str, Generation] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if line == "" or not line.startswith("{"):
-            continue
-        try:
-            loaded: object = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(loaded, dict):
-            continue
-        event = _as_dict(cast("object", loaded))
-        transcript.raw_events += 1
-        if len(event) == 0:
-            continue
+    last_finished = ""
+    for event in events:
+        if transcript.session_id == "":
+            session_id = str(event.get("sessionID") or "")
+            if session_id != "":
+                transcript.session_id = session_id
         kind = event.get("type")
         part = _as_dict(event.get("part"))
         if len(part) == 0:
+            if kind == "error":
+                transcript.errors.append(str(event.get("error") or "error")[:500])
             continue
+        message_id = str(part.get("messageID") or part.get("id") or "")
+        if kind == "text" and message_id in continue_ids:
+            if last_finished in by_message:
+                by_message[last_finished].compaction = True
+            continue
+        stamp = _int(event.get("timestamp"))
         if kind == "step_finish":
-            _absorb_step(transcript, by_message, part)
+            _absorb_step(transcript, by_message, part, stamp)
+            if message_id != "":
+                last_finished = message_id
         elif kind == "tool_use":
             _absorb_tool(transcript, part)
         elif kind == "text":
-            _absorb_text(by_message, part)
+            _absorb_text(by_message, part, stamp)
         elif kind == "error":
             message = part.get("error") or part.get("message") or "error"
             transcript.errors.append(str(message)[:500])
@@ -146,13 +174,110 @@ def parse_jsonl(text: str) -> AgentTranscript:
 
 
 @beartype
+def metrics(transcript: AgentTranscript) -> dict[str, int | str]:
+    """Поля записи прогона: компакции, пик контекста и шаг первой правки.
+
+    ``max_context`` — максимум ``input + cache_read`` по генерациям.
+    ``first_edit_step`` — номер настоящего шага (без компакции), 1-based,
+    либо ``-1``, если правки не было.
+    """
+    peak = 0
+    compactions = 0
+    for generation in transcript.generations:
+        peak = max(peak, generation.input_tokens + generation.cache_read)
+        if generation.compaction:
+            compactions += 1
+    return {
+        "compactions": compactions,
+        "max_context": peak,
+        "first_edit_step": first_edit_step(transcript),
+        "session_id": transcript.session_id,
+    }
+
+
+@beartype
+def first_edit_step(transcript: AgentTranscript) -> int:
+    """Номер шага агента с первой правкой. Компакции в счёт не идут."""
+    edit_message = ""
+    for tool in transcript.tools:
+        short = tool.tool.rsplit("_", 1)[-1]
+        if tool.tool in _EDIT_TOOLS or short in _EDIT_TOOLS:
+            edit_message = tool.message_id
+            break
+    if edit_message == "":
+        return -1
+    step = 0
+    for generation in transcript.generations:
+        if generation.compaction:
+            continue
+        step += 1
+        if generation.message_id == edit_message:
+            return step
+    return -1
+
+
+@beartype
+def agent_steps(transcript: AgentTranscript) -> int:
+    """Число генераций без сводок компакции: по ним считается лимит шагов."""
+    return sum(1 for generation in transcript.generations if not generation.compaction)
+
+
+@beartype
+def _load_events(text: str) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line == "" or not line.startswith("{"):
+            continue
+        try:
+            loaded: object = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(loaded, dict):
+            events.append(_as_dict(cast("object", loaded)))
+    return events
+
+
+@beartype
+def _continue_message_ids(events: list[dict[str, object]]) -> set[str]:
+    """Идентификаторы синтетического Continue: у них нет ``step_finish``."""
+    finished: set[str] = set()
+    candidates: set[str] = set()
+    for event in events:
+        part = _as_dict(event.get("part"))
+        if len(part) == 0:
+            continue
+        message_id = str(part.get("messageID") or part.get("id") or "")
+        if message_id == "":
+            continue
+        if event.get("type") == "step_finish":
+            finished.add(message_id)
+        elif event.get("type") == "text" and _is_continue_part(part):
+            candidates.add(message_id)
+    return candidates - finished
+
+
+@beartype
+def _is_continue_part(part: dict[str, object]) -> bool:
+    text = part.get("text")
+    if not isinstance(text, str) or CONTINUE_MARKER not in text:
+        return False
+    if part.get("synthetic") is True:
+        return True
+    metadata = _as_dict(part.get("metadata"))
+    return metadata.get("compaction_continue") is True or text.strip().endswith(CONTINUE_MARKER)
+
+
+@beartype
 def _absorb_step(
     transcript: AgentTranscript,
     by_message: dict[str, Generation],
     part: dict[str, object],
+    stamp: int = 0,
 ) -> None:
     message_id = str(part.get("messageID") or part.get("id") or "")
     generation = by_message.setdefault(message_id, Generation(message_id=message_id))
+    _touch(generation, stamp)
     generation.reason = str(part.get("reason") or "")
     cost = part.get("cost")
     if isinstance(cost, (int, float)):
@@ -188,12 +313,25 @@ def _absorb_tool(transcript: AgentTranscript, part: dict[str, object]) -> None:
 
 
 @beartype
-def _absorb_text(by_message: dict[str, Generation], part: dict[str, object]) -> None:
+def _absorb_text(
+    by_message: dict[str, Generation], part: dict[str, object], stamp: int = 0
+) -> None:
     message_id = str(part.get("messageID") or part.get("id") or "")
     generation = by_message.setdefault(message_id, Generation(message_id=message_id))
+    _touch(generation, stamp)
     text = part.get("text")
     if isinstance(text, str):
         generation.text += text
+
+
+@beartype
+def _touch(generation: Generation, stamp: int) -> None:
+    if stamp <= 0:
+        return
+    if generation.started == 0 or stamp < generation.started:
+        generation.started = stamp
+    if stamp > generation.ended:
+        generation.ended = stamp
 
 
 @beartype

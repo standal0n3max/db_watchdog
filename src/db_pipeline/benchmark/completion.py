@@ -12,7 +12,8 @@
 Категории API-отказов не должны попадать в McNemar: иначе измеряется надёжность
 шлюза, а не качество графа. В пары идут только ``ok`` и ``self_stop_empty``.
 ``length_partial`` (ответ обрезан, но текст ненулевой) считается отдельно и в
-пары не входит: это не полный ответ модели.
+пары не входит: это не полный ответ модели. ``compaction_stop`` — финальная
+генерация сразу после сводки компакции и пустой diff; в пары не входит.
 
 Признаки берутся из run record: число генераций, ``reason`` последней генерации,
 маркер бюджетной ошибки в ``agent_jsonl`` и наличие изменяющего инструмента в
@@ -48,6 +49,7 @@ OUTCOMES = (
     "length",
     "length_partial",
     "step_limit",
+    "compaction_stop",
     "self_stop_empty",
     "timeout",
     "crash_unknown",
@@ -78,7 +80,8 @@ def classify(record: dict[str, object], step_limit: int = 0) -> Completion:
     """Определяет категорию завершения по run record.
 
     Порядок проверок: отсутствие генераций → потолок ответа → бюджет →
-    лимит шагов → самоостановка без правки → успех.
+    лимит настоящих шагов (без генераций компакции) → остановка сразу после
+    компакции → самоостановка без правки → успех.
     """
     if record.get("agent_timeout") is True:
         generations = _generations(record)
@@ -125,12 +128,20 @@ def classify(record: dict[str, object], step_limit: int = 0) -> Completion:
             reason=last_reason,
             detail="прогон упёрся в потолок бюджета ключа",
         )
-    if step_limit > 0 and len(generations) >= step_limit:
+    agent_steps = _agent_steps(generations)
+    if step_limit > 0 and len(agent_steps) >= step_limit:
         return Completion(
             outcome="step_limit",
             generations=len(generations),
             reason=last_reason,
             detail=f"достигнут лимит шагов {step_limit}",
+        )
+    if _compaction_stop(generations, record):
+        return Completion(
+            outcome="compaction_stop",
+            generations=len(generations),
+            reason=last_reason,
+            detail="остановка сразу после компакции, diff пустой",
         )
     if last_reason == "stop" and not _edited(record):
         return Completion(
@@ -183,6 +194,28 @@ def _generations(record: dict[str, object]) -> list[dict[str, object]]:
 @beartype
 def _last_reason(generations: list[dict[str, object]]) -> str:
     return str(generations[-1].get("reason") or "")
+
+
+@beartype
+def _agent_steps(generations: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Генерации агента: сводка компакции шагом не считается."""
+    return [item for item in generations if item.get("compaction") is not True]
+
+
+@beartype
+def _compaction_stop(
+    generations: list[dict[str, object]], record: dict[str, object]
+) -> bool:
+    """Финальная генерация идёт сразу после компакции, правок нет."""
+    if len(generations) < 2:
+        return False
+    if generations[-2].get("compaction") is not True:
+        return False
+    if _last_reason(generations) != "stop":
+        return False
+    if _edited(record):
+        return False
+    return _int(record.get("diff_size")) == 0
 
 
 @beartype

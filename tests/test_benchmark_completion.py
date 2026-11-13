@@ -75,6 +75,25 @@ class ClassifyTests(unittest.TestCase):
         record = _record(generations=_generations("stop"))
         self.assertEqual(completion.outcome(record), "self_stop_empty")
 
+    def test_compaction_stop_is_separate_from_self_stop(self) -> None:
+        generations = [
+            {"reason": "stop", "output_tokens": 20, "compaction": True},
+            {"reason": "stop", "output_tokens": 10, "compaction": False},
+        ]
+        record = _record(generations)
+        self.assertEqual(completion.outcome(record), "compaction_stop")
+        self.assertFalse(completion.countable(record))
+
+    def test_compaction_generation_does_not_count_toward_step_limit(self) -> None:
+        generations = [
+            {"reason": "stop", "compaction": True},
+            {"reason": "tool-calls"},
+            {"reason": "stop"},
+        ]
+        record = _record(generations, events=["edit"])
+        self.assertEqual(completion.outcome(record, step_limit=3), "ok")
+        self.assertEqual(completion.outcome(record, step_limit=2), "step_limit")
+
     def test_self_stop_with_edit_is_ok(self) -> None:
         record = _record(
             generations=_generations("stop"),

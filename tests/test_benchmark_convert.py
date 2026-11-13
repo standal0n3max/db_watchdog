@@ -149,6 +149,80 @@ class OpenCodeJsonlTests(unittest.TestCase):
         transcript = parse_jsonl("not json\n\n{}\n")
         self.assertEqual(transcript.raw_events, 1)
 
+    def test_compaction_pair_marks_summary_and_drops_continue(self) -> None:
+        from db_pipeline.benchmark import opencode
+
+        marker = opencode.CONTINUE_MARKER
+        lines = [
+            json.dumps(
+                {
+                    "type": "text",
+                    "timestamp": 1000,
+                    "sessionID": "ses_1",
+                    "part": {"messageID": "sum", "text": "## Objective\nkeep going"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "step_finish",
+                    "timestamp": 1100,
+                    "sessionID": "ses_1",
+                    "part": {
+                        "messageID": "sum",
+                        "reason": "stop",
+                        "tokens": {
+                            "input": 24000,
+                            "output": 400,
+                            "reasoning": 10,
+                            "cache": {"read": 100},
+                        },
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "text",
+                    "timestamp": 1200,
+                    "sessionID": "ses_1",
+                    "part": {
+                        "messageID": "cont",
+                        "synthetic": True,
+                        "metadata": {"compaction_continue": True},
+                        "text": marker,
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "step_finish",
+                    "timestamp": 1400,
+                    "sessionID": "ses_1",
+                    "part": {
+                        "messageID": "next",
+                        "reason": "stop",
+                        "tokens": {"input": 15000, "output": 80, "cache": {"read": 50}},
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "text",
+                    "timestamp": 1300,
+                    "sessionID": "ses_1",
+                    "part": {"messageID": "next", "text": "## Combined Summary"},
+                }
+            ),
+        ]
+        transcript = parse_jsonl("\n".join(lines))
+        self.assertEqual(transcript.session_id, "ses_1")
+        self.assertEqual(len(transcript.generations), 2)
+        self.assertTrue(transcript.generations[0].compaction)
+        self.assertFalse(transcript.generations[1].compaction)
+        self.assertEqual(transcript.generations[1].text, "## Combined Summary")
+        self.assertEqual(opencode.metrics(transcript)["compactions"], 1)
+        self.assertEqual(opencode.metrics(transcript)["max_context"], 24100)
+        self.assertEqual(opencode.metrics(transcript)["first_edit_step"], -1)
+
 
 if __name__ == "__main__":
     unittest.main()

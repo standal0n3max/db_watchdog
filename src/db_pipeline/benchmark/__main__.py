@@ -135,6 +135,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         report["context_length_ok"] = (
             observed is not None and cfg.context_length <= observed
         )
+        if observed is not None and cfg.context_length < observed:
+            report["context_window_note"] = (
+                f"заданное окно {cfg.context_length} меньше окна модели {observed}"
+            )
     if len(missing) == 0:
         project_ok, project_detail = telemetry.project_matches(cfg.otel, cfg.langfuse_project)
         report["langfuse_project"] = {
