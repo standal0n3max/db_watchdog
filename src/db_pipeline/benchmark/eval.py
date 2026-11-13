@@ -379,6 +379,40 @@ def median(values: list[int]) -> float:
 
 
 @beartype
+def underspecified_tasks(data: Path | None = None) -> set[str]:
+    """Задачи из ``spec-audit.json``, помеченные как недоопределённые.
+
+    Пустой файл или его отсутствие означает, что первичная метрика считается
+    по всем задачам: аудит ещё не запускали.
+    """
+    report = paths.reports_dir(data) / "spec-audit.json"
+    if not report.is_file():
+        return set()
+    try:
+        raw: object = json.loads(report.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return set()
+    if not isinstance(raw, dict):
+        return set()
+    payload = cast("dict[str, object]", raw)
+    names = payload.get("underspecified")
+    if isinstance(names, list):
+        return {str(name) for name in cast("list[object]", names)}
+    rows = payload.get("tasks")
+    if not isinstance(rows, list):
+        return set()
+    found: set[str] = set()
+    for item in cast("list[object]", rows):
+        if not isinstance(item, dict):
+            continue
+        row = cast("dict[str, object]", item)
+        if row.get("underspecified") is True:
+            found.add(str(row.get("task") or ""))
+    found.discard("")
+    return found
+
+
+@beartype
 def prior_twin_tasks(data: Path | None = None, section: str = "holdout") -> set[str]:
     """Задачи со стратой ``prior_twin``: берётся из отчёта leak-guard, если он есть."""
     return _report_task_set(data, section, "prior_twin_tasks")
@@ -438,52 +472,59 @@ def build_report(
     assign_repetitions(records)
     pairs = build_pairs(records)
     complete = [pair for pair in pairs if pair.bare and pair.graph]
+    flagged = underspecified_tasks(data)
+    primary = [pair for pair in complete if pair.task not in flagged]
     twins = prior_twin_tasks(data, section)
     missing_prism = prism_missing_tasks(data, section)
-    normal = [pair for pair in complete if pair.task not in twins]
-    twin_pairs = [pair for pair in complete if pair.task in twins]
-    covered = [pair for pair in complete if pair.task not in missing_prism]
+    normal = [pair for pair in primary if pair.task not in twins]
+    twin_pairs = [pair for pair in primary if pair.task in twins]
+    covered = [pair for pair in primary if pair.task not in missing_prism]
     covered_normal = [pair for pair in covered if pair.task not in twins]
+    primary_records = [record for record in records if str(record.get("func")) not in flagged]
+    flagged_records = [record for record in records if str(record.get("func")) in flagged]
     # Метрики рук считаются только по пригодным прогонам: иначе pass_rate
     # разбавлен отказами API, которые к агенту отношения не имеют. Лимит шагов
     # берётся из manifest каждой записи, чтобы step_limit не терялся.
     by_mode = {
         mode: [
             record
-            for record in records
+            for record in primary_records
             if record.get("mode") == mode
             and completion.countable(record, record_step_limit(record))
         ]
         for mode in modes
     }
-    repeat_counts = sorted({pair.repetition for pair in complete})
+    repeat_counts = sorted({pair.repetition for pair in primary})
     excluded = [
         record
         for record in records
         if not completion.countable(record, record_step_limit(record))
     ]
     return {
-        "pairs": len(complete),
+        "pairs": len(primary),
         "incomplete_pairs": len(pairs) - len(complete),
+        "underspecified_tasks": sorted(flagged),
+        "underspecified_pairs": len(complete) - len(primary),
         "repetitions": len(repeat_counts),
         "repetitions_requested": repetitions,
         "repetitions_ok": len(repeat_counts) >= min(repetitions, max(1, len(complete))),
         "runs_total": len(records),
         "runs_excluded": len(excluded),
         "completion": completion.summarize(records, _steps_of(records)),
-        "mcnemar_pair_level": mcnemar(complete).to_dict(),
-        "mcnemar_task_level": mcnemar(complete, task_level=True).to_dict(),
+        "mcnemar_pair_level": mcnemar(primary).to_dict(),
+        "mcnemar_task_level": mcnemar(primary, task_level=True).to_dict(),
         "mcnemar_normal_only": mcnemar(normal).to_dict(),
         # Основная страта: база есть в PRISM и эталон не применялся прежде.
         "mcnemar_prism_covered": mcnemar(covered).to_dict(),
         "mcnemar_prism_covered_normal": mcnemar(covered_normal).to_dict(),
-        "sign_test_by_task": sign_test_by_task(complete).to_dict(),
-        "itt": itt_summary(records),
+        "sign_test_by_task": sign_test_by_task(primary).to_dict(),
+        "itt": itt_summary(primary_records),
+        "itt_underspecified": itt_summary(flagged_records),
         "experiment_id": experiment_id,
         "prior_twin_tasks": sorted(twins),
         "prior_twin_pairs": len(twin_pairs),
         "prism_missing_tasks": sorted(missing_prism),
-        "prism_missing_pairs": len(complete) - len(covered),
+        "prism_missing_pairs": len(primary) - len(covered),
         "bare": aggregate(by_mode.get(COMPARISON_LEFT, [])),
         "graph": aggregate(by_mode.get(COMPARISON_RIGHT, [])),
     }

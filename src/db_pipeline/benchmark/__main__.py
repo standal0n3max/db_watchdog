@@ -514,6 +514,32 @@ def _budget_guard(skip: bool, max_tokens: int) -> dict[str, object]:
 
 
 @beartype
+def cmd_spec_audit(args: argparse.Namespace) -> int:
+    """Помечает недоопределённые задачи tune и holdout. Эталон агенту не виден."""
+    from db_pipeline.benchmark import spec_audit
+    from db_pipeline.benchmark.graph import split as split_module
+
+    data = None if args.data is None else Path(args.data)
+    split = split_module.derive_split(data)
+    names = list(split["tune"]) + list(split_module.read_holdout())
+    report = spec_audit.audit_names(names, data)
+    target = spec_audit.write_report(report, data)
+    flagged = report["underspecified"]
+    print(
+        json.dumps(
+            {
+                "path": str(target),
+                "tasks_total": report["tasks_total"],
+                "underspecified": flagged,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+@beartype
 def cmd_eval(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark import eval as eval_module
 
@@ -747,6 +773,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="формулировка абзаца об инструментах: directive (нейтральная) или situational",
     )
     pairwise_parser.set_defaults(handler=cmd_pairwise)
+
+    spec_parser = sub.add_parser(
+        "spec-audit",
+        help="пометить недоопределённые задачи tune и holdout",
+    )
+    spec_parser.set_defaults(handler=cmd_spec_audit)
 
     eval_parser = sub.add_parser("eval", help="отчёт McNemar по сохранённым прогонам")
     eval_parser.add_argument(
