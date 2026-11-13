@@ -1,9 +1,10 @@
 """Аудит недоопределённых задач по тестовому патчу эталона.
 
 Эталон читается только здесь и только для курирования: агент его не видит.
-Задача помечается, если в ``expected/*.out`` изменился вывод уже существующего
-запроса или добавлены ``LINE n:``, ``ERROR``, ``DETAIL``, ``HINT`` с текстом,
-которого нет ни в ``goal``, ни в ``contract``.
+Детектор пишет ``reason``, если в ``expected/*.out`` изменился вывод уже
+существующего запроса. ``LINE n:``, ``ERROR``, ``DETAIL`` и ``HINT`` из этого
+вывода попадают в причину, когда их текста нет ни в ``goal``, ни в ``contract``.
+Поле ``underspecified`` ставится только задачам из ручной проверки.
 """
 
 from __future__ import annotations
@@ -16,6 +17,12 @@ from beartype import beartype
 
 from db_pipeline.benchmark import convert, paths
 from db_pipeline.benchmark.models import as_str_list
+
+# Ручная проверка 2026-11-13. Детектор пишет reason у всех сигналов,
+# но из первичной метрики выходит только подтверждённая задача:
+# в ожидаемом выводе 3b4c у уже существующего запроса появился
+# указатель LINE, а goal и contract этого не говорят.
+CONFIRMED_UNDERSPECIFIED = frozenset({"postgres__3b4c2b9db25e"})
 
 _SQL_RE = re.compile(
     r"^(?:SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP|VALUES|EXPLAIN|COPY|DO|MERGE|TABLE)\b",
@@ -33,13 +40,11 @@ def reasons_for(test_patch: str, goal: str, contract: list[str]) -> list[str]:
     changed = False
     hidden: list[str] = []
     for _path, hunk in _out_hunks(test_patch):
-        if _changes_existing_query(hunk):
+        signals = _hunk_signals(hunk, visible)
+        if signals["changed"]:
             changed = True
-        for line in hunk:
-            if not line.startswith("+") or line.startswith("+++"):
-                continue
-            missing = _hidden_diagnostic(line[1:].strip(), visible)
-            if missing != "" and missing not in hidden:
+        for missing in signals["hidden"]:
+            if missing not in hidden:
                 hidden.append(missing)
     if changed:
         reasons.append("changed_existing_output")
@@ -60,7 +65,7 @@ def audit_names(names: list[str], data: Path | None = None) -> dict[str, object]
             str(public.get("goal") or ""),
             as_str_list(public.get("contract")),
         )
-        underspecified = len(found) > 0
+        underspecified = name in CONFIRMED_UNDERSPECIFIED
         if underspecified:
             flagged.append(name)
         rows.append(
@@ -120,9 +125,17 @@ def _path_from_header(header: str) -> str:
 
 
 @beartype
-def _changes_existing_query(lines: list[str]) -> bool:
-    """Правка вывода запроса, который уже был в ожидаемом файле."""
+def _hunk_signals(lines: list[str], visible: str) -> dict[str, object]:
+    """Сигналы только у вывода запроса, который уже был в файле.
+
+    Комментарии и пустые строки не считаются изменением вывода: новый тест
+    часто начинается с ``--`` сразу после предыдущего запроса. Диагностика
+    нового запроса сюда не входит — её текст относится к добавленному тесту,
+    а не к уже существовавшей строке.
+    """
     mode = ""
+    changed = False
+    hidden: list[str] = []
     for line in lines:
         if line == "" or line.startswith(("@@", "+++", "---")):
             continue
@@ -137,9 +150,16 @@ def _changes_existing_query(lines: list[str]) -> bool:
         if is_sql and prefix == "+":
             mode = "new"
             continue
-        if mode == "existing" and prefix in "+-":
-            return True
-    return False
+        if mode != "existing" or prefix not in "+-":
+            continue
+        if body == "" or body.startswith("--"):
+            continue
+        changed = True
+        if prefix == "+":
+            missing = _hidden_diagnostic(body, visible)
+            if missing != "" and missing not in hidden:
+                hidden.append(missing)
+    return {"changed": changed, "hidden": hidden}
 
 
 @beartype

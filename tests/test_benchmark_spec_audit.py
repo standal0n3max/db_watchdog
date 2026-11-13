@@ -44,9 +44,17 @@ class SpecAuditTests(unittest.TestCase):
         self.assertEqual(spec_audit.reasons_for(patch, goal, []), [])
 
     def test_error_absent_from_goal_is_hidden(self) -> None:
-        patch = _patch("+SELECT 1;\n+ERROR:  cache lookup failed for type 1\n")
+        patch = _patch(
+            " SELECT 1;\n"
+            " ?column?\n"
+            "+ERROR:  cache lookup failed for type 1\n"
+        )
         reasons = spec_audit.reasons_for(patch, "Fix the cache.", [])
         self.assertTrue(any(item.startswith("hidden_error_text") for item in reasons))
+
+    def test_new_query_error_is_not_an_automatic_mark(self) -> None:
+        patch = _patch("+SELECT 1;\n+ERROR:  cache lookup failed for type 1\n")
+        self.assertEqual(spec_audit.reasons_for(patch, "Fix the cache.", []), [])
 
 
 class PrimaryMetricTests(unittest.TestCase):
