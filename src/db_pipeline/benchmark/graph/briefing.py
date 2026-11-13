@@ -1,8 +1,9 @@
 """Сводка графа, которую оркестратор кладёт в промпт до первого шага.
 
 Функция одна: ``build_briefing``. Она читает только публичные поля задачи
-(``graded_by``, ``contract``, первая строка ``goal``) и отвечает через уже
-открытый ``GraphView``. Эталон не открывается. Пустой ответ (все ``not_found``)
+(``graded_by``, ``contract``, идентификаторы и первая строка ``goal``) и
+отвечает через уже открытый ``GraphView``. Эталон не открывается. Пустой
+ответ (все ``not_found``)
 тоже воздействие: текст пишется как есть, прогон не перезапускается.
 
 Бюджет текста около 1500 токенов. Лишние строки отрезаются с конца, порядок
@@ -12,6 +13,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import cast
 
@@ -26,6 +28,13 @@ TOKEN_BUDGET = 1500
 TESTS_LIMIT = 5
 ORIGIN_LIMIT = 3
 FIXES_LIMIT = 3
+SYMBOL_LIMIT = 3
+IDENTIFIER_LIMIT = 12
+
+_CAMEL_RE = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-zA-Z0-9]+)+\b")
+_LOWER_CAMEL_RE = re.compile(r"\b[a-z][a-z0-9]*(?:[A-Z][a-zA-Z0-9]*)+\b")
+_SNAKE_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
+_OID_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9]*OID\b")
 
 
 @beartype
@@ -63,13 +72,22 @@ def build_briefing(view: GraphView, task: dict[str, object]) -> Briefing:
     lines: list[str] = []
     calls: list[dict[str, object]] = []
     lines.append("tests_to_code")
-    graded = as_str_list(task.get("graded_by"))
+    graded = _unique_tests(as_str_list(task.get("graded_by")))
     if len(graded) == 0:
         lines.append("- none")
     for test in graded:
         payload = graph_view.tests_to_code(view, test, TESTS_LIMIT)
         calls.append(_call("tests_to_code", {"test": test, "limit": TESTS_LIMIT}, payload))
         lines.extend(_test_lines(test, payload))
+    goal = str(task.get("goal") or "")
+    lines.append("symbols")
+    identifiers = goal_identifiers(goal)
+    if len(identifiers) == 0:
+        lines.append("- none")
+    for name in identifiers:
+        payload = graph_view.find_code_symbols(view, name, SYMBOL_LIMIT)
+        calls.append(_call("find_code_symbols", {"name": name, "limit": SYMBOL_LIMIT}, payload))
+        lines.extend(_symbol_lines(name, payload))
     lines.append("find_error_origin")
     contract = as_str_list(task.get("contract"))
     if len(contract) == 0:
@@ -80,7 +98,6 @@ def build_briefing(view: GraphView, task: dict[str, object]) -> Briefing:
             _call("find_error_origin", {"message": message, "limit": ORIGIN_LIMIT}, payload)
         )
         lines.extend(_origin_lines(message, payload))
-    goal = str(task.get("goal") or "")
     query = goal.splitlines()[0].strip() if goal.strip() != "" else ""
     lines.append("similar_fixes")
     if query == "":
@@ -98,6 +115,45 @@ def build_briefing(view: GraphView, task: dict[str, object]) -> Briefing:
         calls=tuple(calls),
         delivered=True,
     )
+
+
+@beartype
+@beartype
+def goal_identifiers(goal: str) -> list[str]:
+    """Идентификаторы из постановки: CamelCase, snake_case и суффикс ``OID``."""
+    found: list[str] = []
+    for pattern in (_CAMEL_RE, _LOWER_CAMEL_RE, _SNAKE_RE, _OID_RE):
+        for match in pattern.findall(goal):
+            if match not in found:
+                found.append(match)
+            if len(found) >= IDENTIFIER_LIMIT:
+                return found
+    return found
+
+
+@beartype
+def _unique_tests(graded: list[str]) -> list[str]:
+    """Один вызов на пару ``expected/*.out`` и ``sql/*.sql`` с общим stem."""
+    chosen: dict[str, str] = {}
+    order: list[str] = []
+    for test in graded:
+        stem = _test_stem(test)
+        if stem not in chosen:
+            order.append(stem)
+            chosen[stem] = test
+            continue
+        if test.endswith(".sql") and not chosen[stem].endswith(".sql"):
+            chosen[stem] = test
+    return [chosen[stem] for stem in order]
+
+
+@beartype
+def _test_stem(path: str) -> str:
+    name = path.rsplit("/", 1)[-1]
+    for suffix in (".sql", ".out", ".spec"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
 
 
 @beartype
@@ -157,6 +213,21 @@ def _test_lines(test: str, payload: dict[str, object]) -> list[str]:
 
 
 @beartype
+def _symbol_lines(name: str, payload: dict[str, object]) -> list[str]:
+    results = _results(payload)
+    if len(results) == 0:
+        return [f"- {name}: not_found"]
+    lines: list[str] = []
+    for item in results:
+        shown = str(item.get("name") or name)
+        kind = str(item.get("kind") or "symbol")
+        path = str(item.get("path") or "")
+        line = item.get("line")
+        lines.append(f"- {shown} {kind} {path}:{line}")
+    return lines
+
+
+@beartype
 def _origin_lines(message: str, payload: dict[str, object]) -> list[str]:
     results = _results(payload)
     if len(results) == 0:
@@ -179,7 +250,10 @@ def _fix_lines(view: GraphView, payload: dict[str, object]) -> list[str]:
         subject = str(item.get("subject") or "").replace("\n", " ")
         revision = str(item.get("revision") or "")
         files = _changed_files(view, revision)
+        names = _changed_names(view, revision)
         shown = ", ".join(files[:6]) if len(files) > 0 else "no files"
+        if len(names) > 0:
+            shown = f"{shown}; fn={', '.join(names[:6])}"
         lines.append(f"- {subject} [{shown}]")
     return lines
 
@@ -201,6 +275,25 @@ def _changed_files(view: GraphView, revision: str) -> list[str]:
             continue
         if path not in found:
             found.append(path)
+    return found
+
+
+@beartype
+def _changed_names(view: GraphView, revision: str) -> list[str]:
+    """Имена функций, которые коммит похожей правки менял."""
+    oid = graph_view.resolve_oid(view, revision)
+    if oid == "":
+        return []
+    with view.lock:
+        rows = view.conn.execute(
+            "SELECT name FROM symbol_changes WHERE oid = ? AND role = 'definition' ORDER BY name",
+            (oid,),
+        ).fetchall()
+    found: list[str] = []
+    for row in rows:
+        name = str(row[0])
+        if name != "" and name not in found:
+            found.append(name)
     return found
 
 
