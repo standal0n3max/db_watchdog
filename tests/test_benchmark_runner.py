@@ -6,9 +6,11 @@ Docker, сеть и LLM не нужны.
 
 from __future__ import annotations
 
+import hashlib
 import unittest
 
 from db_pipeline.benchmark import runner
+from db_pipeline.benchmark.telemetry import TRACE_TEXT_LIMIT
 
 PUBLIC: dict[str, object] = {
     "area": "backend",
@@ -71,6 +73,50 @@ class PromptVariantTests(unittest.TestCase):
 
     def test_default_prompt_is_directive(self) -> None:
         self.assertEqual(runner.PROMPT_DEFAULT, runner.PROMPT_DIRECTIVE)
+
+    def test_bare_and_graph_prompts_omit_private_oracle(self) -> None:
+        public = dict(PUBLIC)
+        public["gold_patch"] = "SECRET_GOLD_PATCH"
+        public["head"] = "SECRET_HEAD_SHA"
+        bare = runner._prompt(public, "bare")  # pyright: ignore[reportPrivateUsage]
+        graph = runner._prompt(  # pyright: ignore[reportPrivateUsage]
+            public, "graph", runner.PROMPT_DIRECTIVE, "visible briefing"
+        )
+        for text in (bare, graph):
+            self.assertNotIn("SECRET_GOLD_PATCH", text)
+            self.assertNotIn("SECRET_HEAD_SHA", text)
+        self.assertIn("visible briefing", graph)
+        self.assertNotIn("visible briefing", bare)
+
+    def test_prompt_sha_and_trace_input_share_the_prompt(self) -> None:
+        text = runner._prompt(PUBLIC, "graph", runner.PROMPT_DIRECTIVE, "brief")  # pyright: ignore[reportPrivateUsage]
+        record: dict[str, object] = {}
+        runner.stamp_prompt(record, text)
+        self.assertEqual(record["agent_prompt"], text)
+        self.assertEqual(
+            record["agent_prompt_sha256"],
+            hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        )
+        self.assertEqual(runner.trace_input(text), text)
+        long_prompt = "x" * (TRACE_TEXT_LIMIT + 50)
+        clipped = runner.trace_input(long_prompt)
+        self.assertEqual(len(clipped), TRACE_TEXT_LIMIT)
+        self.assertTrue(long_prompt.startswith(clipped))
+
+    def test_provider_check_accepts_deepinfra_and_flags_mismatch(self) -> None:
+        record: dict[str, object] = {}
+        before: dict[str, object] = {"provider": "", "requests": 1}
+        after: dict[str, object] = {"provider": "DeepInfra", "requests": 4}
+        runner.stamp_provider(record, before, after, "deepinfra")
+        self.assertFalse(record["provider_mismatch"])
+        check = record["provider_check"]
+        self.assertIsInstance(check, dict)
+        self.assertEqual(record["openrouter_requests"], 3)
+        self.assertEqual(record["openrouter_provider_configured"], "deepinfra")
+        other: dict[str, object] = {}
+        together: dict[str, object] = {"provider": "Together", "requests": 2}
+        runner.stamp_provider(other, before, together, "deepinfra")
+        self.assertTrue(other["provider_mismatch"])
 
 
 class PromptVariantValidationTests(unittest.TestCase):

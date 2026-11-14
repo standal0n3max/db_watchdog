@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 from beartype import beartype
@@ -96,3 +98,22 @@ def release_dir(data: Path | None = None, version: str = "") -> Path:
 @beartype
 def docker_dir() -> Path:
     return project_root() / "docker"
+
+
+@beartype
+def write_atomic(path: Path, text: str) -> None:
+    """Пишет файл через временный и ``os.replace``: читатель не видит обрывок."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise

@@ -20,6 +20,7 @@ Run record фиксирует версии OpenCode, образов и конф�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -42,7 +43,7 @@ from db_pipeline.benchmark import (
     telemetry,
     tree,
 )
-from db_pipeline.benchmark.config import BenchmarkConfig, load_config
+from db_pipeline.benchmark.config import BenchmarkConfig, load_config, provider_matches
 from db_pipeline.benchmark.graph.briefing import Briefing
 from db_pipeline.benchmark.models import CheckOutcome, as_str_list
 from db_pipeline.errors import PipelineError
@@ -75,6 +76,7 @@ def run_one(
     keep_container: bool = False,
     smoke: smoke_session.SmokeSession | None = None,
     prompt_variant: str = PROMPT_DEFAULT,
+    pairwise: dict[str, object] | None = None,
 ) -> dict[str, object]:
     if mode not in MODES:
         raise PipelineError("run", f"режим {mode} неизвестен")
@@ -101,7 +103,13 @@ def run_one(
         "effective": {"base": oracle["base"], "head": oracle["head"]},
         "prompt_variant": prompt_variant,
         "experiment_id": cfg.experiment_id,
+        "record_finalized": False,
     }
+    if pairwise is not None:
+        record["pairwise_plan_sha256"] = str(pairwise.get("plan_sha256") or "")
+        record["pairwise_slot_id"] = str(pairwise.get("slot_id") or "")
+        record["task_index"] = _stat_int(pairwise.get("task_index"))
+        record["repetition"] = _stat_int(pairwise.get("repetition"))
 
     owns_session = smoke is None
     active = smoke or smoke_session.open_session(cfg, data)
@@ -132,6 +140,7 @@ def run_one(
     # раньше graph без вызова MCP получал FAIL поверх реального результата.
     if not _integration_ok(record.get("integration")):
         record["integration_failure"] = True
+    record["record_finalized"] = record.get("provider_mismatch") is not True
     _write_record(record, data)
     return record
 
@@ -197,6 +206,7 @@ def _run_in_container(
             record["briefing_calls"] = [dict(item) for item in built.calls]
             briefing_text = built.text
         prompt = _prompt(public, mode, prompt_variant, briefing_text)
+        stamp_prompt(record, prompt)
         before_gateway = smoke_session.read_gateway_health(active)
         _phase(
             phases,
@@ -204,7 +214,7 @@ def _run_in_container(
             _run_agent(container_id, prompt, cfg, mode, record, transcript, context),
         )
         after_gateway = smoke_session.read_gateway_health(active)
-        record["openrouter_provider"] = str(after_gateway.get("provider") or "")
+        stamp_provider(record, before_gateway, after_gateway, cfg.openrouter_provider)
         record["empty_retries"] = _empty_retry_delta(before_gateway, after_gateway)
 
         # Gate-ы и diff снимаются сразу после агента, пока скрытые тесты ещё
@@ -248,8 +258,9 @@ def _run_in_container(
         record["seconds"] = round((datetime.now(UTC) - started).total_seconds(), 1)
 
         record["langfuse"] = _publish_trace(
-            cfg, str(record["trace_id"]), name, mode, record, phases, transcript
+            cfg, str(record["trace_id"]), name, mode, record, phases, transcript, prompt
         )
+        record["record_finalized"] = False
         _write_record(record, data)
     finally:
         if not keep_container:
@@ -465,6 +476,48 @@ def _prompt(
     if mode not in GRAPH_MODES:
         return text
     return text + _history_paragraph(variant, briefing)
+
+
+@beartype
+def stamp_prompt(record: dict[str, object], prompt: str) -> None:
+    """Сохраняет точный промпт агента и его SHA-256."""
+    record["agent_prompt"] = prompt
+    record["agent_prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
+@beartype
+def trace_input(prompt: str) -> str:
+    """Тот же промпт, что ушёл агенту, обрезанный лимитом отображения Langfuse."""
+    return telemetry.clip_text(prompt)
+
+
+@beartype
+def stamp_provider(
+    record: dict[str, object],
+    before: dict[str, object],
+    after: dict[str, object],
+    configured: str,
+) -> None:
+    """Фиксирует настроенный и фактический провайдер, дельту запросов и проверку.
+
+    Пустой фактический провайдер при нуле запросов не считается подменой:
+    агент мог упасть до первого вызова модели. Непустой чужой провайдер
+    помечает слот и не даёт партии идти дальше.
+    """
+    actual = str(after.get("provider") or "")
+    requests = max(0, _stat_int(after.get("requests")) - _stat_int(before.get("requests")))
+    checked = requests > 0 or actual != ""
+    ok = (not checked) or provider_matches(actual, configured)
+    record["openrouter_provider_configured"] = configured
+    record["openrouter_provider"] = actual
+    record["openrouter_requests"] = requests
+    record["provider_check"] = {
+        "configured": configured,
+        "actual": actual,
+        "requests": requests,
+        "ok": ok,
+    }
+    record["provider_mismatch"] = checked and not ok
 
 
 # Имена в форме, в которой их регистрирует OpenCode: префикс сервера ``graph_``.
@@ -786,6 +839,7 @@ def _publish_trace(
     record: dict[str, object],
     phases: dict[str, dict[str, object]],
     transcript: opencode.AgentTranscript,
+    prompt: str,
 ) -> dict[str, object]:
     start, end = _trace_window(transcript)
     root = telemetry.OtelSpan(
@@ -796,9 +850,7 @@ def _publish_trace(
             "langfuse.trace.name": f"{name} · {mode}",
             "langfuse.trace.metadata.experiment_id": cfg.experiment_id,
             "langfuse.trace.metadata.langfuse_project": cfg.langfuse_project,
-            "langfuse.observation.input": json.dumps(
-                {"func": name, "mode": mode}, ensure_ascii=False
-            ),
+            "langfuse.observation.input": trace_input(prompt),
             "langfuse.observation.output": json.dumps(
                 {"verdict": record.get("verdict"), "pass": record.get("pass")},
                 ensure_ascii=False,
@@ -901,7 +953,7 @@ def _write_record(record: dict[str, object], data: Path | None) -> Path:
     folder = paths.runs_dir(data)
     run_id = str(record.get("trace_id") or record["func"])
     target = folder / f"{record['func']}__{record['mode']}__{run_id}.json"
-    target.write_text(
-        json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    paths.write_atomic(
+        target, json.dumps(record, ensure_ascii=False, indent=2) + "\n"
     )
     return target
