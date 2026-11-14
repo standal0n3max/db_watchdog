@@ -39,7 +39,7 @@ class DockerExecStdinTests(unittest.TestCase):
 
     def test_session_exec_closes_stdin(self) -> None:
         with mock.patch.object(subprocess, "run", return_value=_FakeCompleted()) as run:
-            session._exec("cid", "echo hi", "")
+            session._exec("cid", "echo hi", "")  # pyright: ignore[reportPrivateUsage]
         self.assertIs(_captured_stdin(run.call_args), subprocess.DEVNULL)
 
 

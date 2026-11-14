@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 from beartype import beartype
 
@@ -43,9 +44,11 @@ def reasons_for(test_patch: str, goal: str, contract: list[str]) -> list[str]:
         signals = _hunk_signals(hunk, visible)
         if signals["changed"]:
             changed = True
-        for missing in signals["hidden"]:
-            if missing not in hidden:
-                hidden.append(missing)
+        hidden_values = signals.get("hidden")
+        if isinstance(hidden_values, list):
+            for missing in cast("list[object]", hidden_values):
+                if isinstance(missing, str) and missing not in hidden:
+                    hidden.append(missing)
     if changed:
         reasons.append("changed_existing_output")
     reasons.extend(hidden[:3])
