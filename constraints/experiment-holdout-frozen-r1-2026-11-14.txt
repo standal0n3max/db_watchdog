@@ -1,0 +1,46 @@
+# Пререгистрация holdout-frozen-r1-2026-11-14.
+# Хэши сняты до платного прогона, с чистого коммита кода.
+# Первичная метрика: ITT pass@1 и парный McNemar на 279 задачах frozen holdout.
+# Dev и tune в первичную метрику не входят.
+# Per-protocol (agent_mcp_calls > 0) — только вторичный анализ.
+# Повторно graph-split --freeze не запускался.
+
+experiment_id holdout-frozen-r1-2026-11-14
+section frozen
+tasks 279
+repeats 1
+slots 558
+hands bare graph
+prompt_variant directive
+model deepseek/deepseek-v4-flash
+temperature 0
+max_tokens 8192
+context_length 32768
+reasoning_max_tokens 1024
+step_limit 80
+empty_stop_nudges 1
+opencode_alias pgpro
+openrouter_provider deepinfra
+allow_fallbacks false
+
+holdout_sha256 482fe7e8992835c3173a0e226ae364a2f348a85074634579229575c19a8a4436
+graph_sqlite_sha256 d6f3e631a497f0b4d37f726dbe9fcdb0a598e77c34aa4267e95bdf7ccbbe1602
+uv_lock_sha256 c29891fb711e72af60c5b7c6a92d758139c51184c6cb8000ab366362e6a38e0c
+pyproject_sha256 d0bced8f64829216d4779136bbe0b5e0ba032deb6f04b7dd8c7fe17d39f4403f
+code_commit 0f8a056eeb41b4ac64dfe9624420573be0f53aa4
+opencode_bare_sha256 f489d7ef7b7740dc8f1fba06ad6999e51b5a848a29c3b0d1ca66f4efa7a52dd0
+opencode_graph_sha256 edc046bcbc89e050652247dd01886f3086d3ac740291812563a41d2a8c3aae28
+image_task sha256:e249eb85e862e541bf0df67b0124d7bd79700fdf1713ff3865b38becb9afbdd1
+image_graph sha256:66e217e668a2a39773a9eda50c649d90720803565b81282a2ee1b4005df1b15d
+image_gateway sha256:9cc64224cc1deeb2791a7173bbf503edd633db3eadd0db89cbacee3e609651cb
+
+budget_limit_usd 50
+budget_usage_usd 8.542716787
+budget_remaining_usd 41.457283213
+
+# Гейты до прогона.
+validate 299/299
+graph_coverage 299/299
+leak_audit_holdout 279/279
+graph_canary 5/5
+probe_provider DeepInfra
