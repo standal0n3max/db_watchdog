@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from typing import cast
 
-from db_pipeline.benchmark.graph import gitgraph, view
+from db_pipeline.benchmark.graph import coverage, gitgraph, view
 from db_pipeline.benchmark.graph.symbols import parse_hunk_header, scan_symbols
 
 
@@ -164,6 +164,32 @@ class GraphViewTests(unittest.TestCase):
         history = view.symbol_history(self.view, "src/backend/x.c", "do_thing")
         self.assertGreater(len(self._rows(history)), 0)
         self.assertNotIn(self.head, {str(row["revision"]) for row in self._rows(history)})
+
+    def test_short_revision_is_inside_cutoff(self) -> None:
+        prefix = self.base[:12]
+        self.assertTrue(coverage.revision_visible(self.view, prefix))
+        payload: dict[str, object] = {}
+        payload["results"] = [{"revision": prefix}]
+        self.assertEqual(
+            coverage._expect(self.view, "read_versioned_source", payload),  # pyright: ignore[reportPrivateUsage]
+            [],
+        )
+
+    def test_unknown_sha_is_outside_cutoff(self) -> None:
+        unknown = "zzzzzzzzzzzz"
+        self.assertFalse(coverage.revision_visible(self.view, unknown))
+        payload: dict[str, object] = {}
+        payload["results"] = [{"revision": unknown}]
+        problems = coverage._expect(self.view, "search_git_history", payload)  # pyright: ignore[reportPrivateUsage]
+        self.assertIn("search_git_history: revision вне visible", problems)
+
+    def test_head_is_outside_cutoff(self) -> None:
+        self.assertFalse(coverage.revision_visible(self.view, self.head))
+        self.assertFalse(coverage.revision_visible(self.view, self.head[:12]))
+        payload: dict[str, object] = {}
+        payload["results"] = [{"revision": self.head}]
+        problems = coverage._expect(self.view, "symbol_history", payload)  # pyright: ignore[reportPrivateUsage]
+        self.assertIn("symbol_history: revision вне visible", problems)
 
     def test_blank_query_is_empty(self) -> None:
         payload = view.search_git_history(self.view, "   ")

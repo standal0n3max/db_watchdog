@@ -197,9 +197,20 @@ def _expect(opened: graph_view.GraphView, tool: str, payload: dict[str, object])
         revision = row.get("revision") or row.get("sample_revision")
         if not isinstance(revision, str) or revision == "":
             continue
-        if revision not in opened.visible:
+        if not revision_visible(opened, revision):
             problems.append(f"{tool}: revision вне visible")
     return problems
+
+
+@beartype
+def revision_visible(opened: graph_view.GraphView, revision: str) -> bool:
+    """Короткий префикс резолвится в полный SHA и сверяется с ``visible``.
+
+    Ответы инструментов отдают 12 символов. ``head`` и неизвестный SHA не входят
+    в отсечку, даже если ``resolve_oid`` узнал точный ``head``.
+    """
+    resolved = graph_view.resolve_oid(opened, revision)
+    return resolved != "" and resolved in opened.visible
 
 
 @beartype
