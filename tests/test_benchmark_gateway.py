@@ -52,6 +52,13 @@ class GatewayModule(Protocol):
 
     def _inject_reasoning(self, body: bytes) -> bytes: ...
 
+    def _inject_provider(self, body: bytes) -> bytes: ...
+
+    def _observe_provider(self, content: bytes) -> str: ...
+
+    OPENROUTER_PROVIDER: str
+    STATS: dict[str, object]
+
 
 def _load_gateway() -> types.ModuleType | None:
     if not GATEWAY_PATH.is_file():
@@ -101,6 +108,11 @@ class GatewayRetryTests(unittest.TestCase):
         os.environ["BENCH_GATEWAY_MAX_ATTEMPTS"] = "4"
         self.module.MAX_RETRY_WAIT = 0.0
         self.module.BASE_BACKOFF = 0.0
+        self.module.OPENROUTER_PROVIDER = "deepinfra"
+        self.module.STATS["provider"] = ""
+        self.module.STATS["requests"] = 0
+        self.module.STATS["provider_ok"] = True
+        self.module.STATS["provider_mismatch"] = False
 
     def _retry(self, client: _FakeClient) -> HttpResponse:
         self.module.CLIENT = client
@@ -198,6 +210,31 @@ class GatewayRetryTests(unittest.TestCase):
         self.assertEqual(loaded["reasoning"], {"max_tokens": 1024})
         again = self.module._inject_reasoning(body)  # pyright: ignore[reportPrivateUsage]
         self.assertEqual(json.loads(again)["reasoning"], {"max_tokens": 1024})
+
+    def test_provider_pin_disables_fallbacks(self) -> None:
+        import json
+
+        body = self.module._inject_provider(  # pyright: ignore[reportPrivateUsage]
+            b'{"model":"m","provider":{"order":["together"],"allow_fallbacks":true}}'
+        )
+        loaded = json.loads(body)
+        self.assertEqual(loaded["provider"]["only"], ["deepinfra"])
+        self.assertIs(loaded["provider"]["allow_fallbacks"], False)
+        self.assertEqual(loaded["provider"]["order"], ["together"])
+
+    def test_sse_and_json_provider_mismatch(self) -> None:
+        sse = (
+            b'data: {"provider":"DeepInfra","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n'
+            b"data: [DONE]\n"
+        )
+        self.assertEqual(self.module._observe_provider(sse), "DeepInfra")  # pyright: ignore[reportPrivateUsage]
+        self.assertFalse(self.module.STATS["provider_mismatch"])
+        body = b'{"provider":"Together","choices":[{"finish_reason":"stop","message":{"content":"x"}}]}'
+        self.assertEqual(self.module._observe_provider(body), "Together")  # pyright: ignore[reportPrivateUsage]
+        self.assertTrue(self.module.STATS["provider_mismatch"])
+        self.assertFalse(self.module.STATS["provider_ok"])
+        self.assertEqual(self.module.STATS["requests"], 2)
+        self.assertEqual(self.module.STATS["provider"], "Together")
 
 
 if __name__ == "__main__":

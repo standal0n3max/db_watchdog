@@ -37,6 +37,7 @@ class BenchmarkConfig:
     gateway_image: str
     model: str
     provider: str
+    openrouter_provider: str
     step_limit: int
     max_tokens: int
     temperature: float
@@ -67,6 +68,7 @@ class BenchmarkConfig:
             "gateway_image": self.gateway_image,
             "model": self.model,
             "provider": self.provider,
+            "openrouter_provider": self.openrouter_provider,
             "step_limit": self.step_limit,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
@@ -95,6 +97,7 @@ def load_config() -> BenchmarkConfig:
         gateway_image=_env("BENCH_GATEWAY_IMAGE", "db-pipeline-bench-gateway:local"),
         model=_env("BENCH_MODEL", "deepseek/deepseek-v4-flash"),
         provider=_env("BENCH_PROVIDER", "pgpro"),
+        openrouter_provider=_env("BENCH_OPENROUTER_PROVIDER", "deepinfra") or "deepinfra",
         step_limit=int(_env("BENCH_STEP_LIMIT", str(DEFAULT_STEP_LIMIT))),
         max_tokens=int(_env("BENCH_MAX_TOKENS", str(DEFAULT_MAX_TOKENS))),
         temperature=float(_env("BENCH_TEMPERATURE", "0")),
@@ -111,6 +114,17 @@ def load_config() -> BenchmarkConfig:
         openrouter_key_present=key != "",
         otel=otel,
     )
+
+
+@beartype
+def provider_matches(actual: str, configured: str) -> bool:
+    """Фактический провайдер OpenRouter совпал с настроенным, без учёта регистра.
+
+    Ответ шлюза пишет ``DeepInfra``, а slug в запросе — ``deepinfra``.
+    """
+    left = actual.strip().casefold()
+    right = configured.strip().casefold()
+    return left != "" and left == right
 
 
 @beartype

@@ -28,7 +28,7 @@ from beartype import beartype
 
 from db_pipeline.benchmark import container, convert
 from db_pipeline.benchmark import session as smoke_session
-from db_pipeline.benchmark.config import BenchmarkConfig
+from db_pipeline.benchmark.config import BenchmarkConfig, provider_matches
 
 
 @beartype
@@ -54,12 +54,22 @@ def probe_gateway(cfg: BenchmarkConfig, host_port: str) -> dict[str, object]:
         },
     )
     report["completion"] = completion
+    after = _get_json(f"{base}/health")
     health = _as_dict(report["health"])
+    actual = str(after.get("provider") or "")
+    provider_ok = provider_matches(actual, cfg.openrouter_provider)
+    report["provider_check"] = {
+        "configured": cfg.openrouter_provider,
+        "actual": actual,
+        "requests": after.get("requests"),
+        "ok": provider_ok,
+    }
     ok = (
         bool(health.get("ok"))
         and len(_as_dict(models)) > 0
         and _status(denied) == 403
         and _status(completion) == 200
+        and provider_ok
     )
     report["ok"] = ok
     return report

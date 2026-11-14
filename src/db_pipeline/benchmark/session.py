@@ -88,11 +88,7 @@ def _start_gateway(
         network=external,
         ports={"0": GATEWAY_PORT},
         labels={"bench.role": "model-gateway"},
-        environment={
-            "OPENROUTER_API_KEY": key,
-            "BENCH_ALLOWED_MODELS": cfg.model,
-            "BENCH_REASONING_MAX_TOKENS": str(cfg.reasoning_max_tokens),
-        },
+        environment=gateway_environment(cfg, key),
     )
     gateway_id = container.create_container(
         spec, name=f"bench-gateway-{uuid.uuid4().hex[:8]}", context=context
@@ -113,6 +109,17 @@ def _start_gateway(
         container.remove_container(gateway_id, context=context)
         raise PipelineError("gateway", "бюджет OpenRouter исчерпан")
     return gateway_id, health, url
+
+
+@beartype
+def gateway_environment(cfg: BenchmarkConfig, key: str) -> dict[str, str]:
+    """Окружение шлюза. ``BENCH_OPENROUTER_PROVIDER`` не равен alias OpenCode."""
+    return {
+        "OPENROUTER_API_KEY": key,
+        "BENCH_ALLOWED_MODELS": cfg.model,
+        "BENCH_REASONING_MAX_TOKENS": str(cfg.reasoning_max_tokens),
+        "BENCH_OPENROUTER_PROVIDER": cfg.openrouter_provider,
+    }
 
 
 @beartype

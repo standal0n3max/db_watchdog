@@ -56,10 +56,19 @@ EMPTY_RETRIES = int(os.environ.get("BENCH_GATEWAY_EMPTY_RETRIES", "2"))
 # и провайдер может выйти за cap. Такие генерации считает запись прогона.
 REASONING_MAX_TOKENS = int(os.environ.get("BENCH_REASONING_MAX_TOKENS", "1024"))
 
+# Slug OpenRouter, не alias OpenCode. Пустое значение остаётся deepinfra:
+# каждый chat-запрос получает provider.only и запрет fallback.
+OPENROUTER_PROVIDER = os.environ.get("BENCH_OPENROUTER_PROVIDER", "deepinfra").strip() or "deepinfra"
+
 # Последний успешный ответ: провайдер OpenRouter и сумма пустых повторов.
 # Прогоны идут по одному шлюзу последовательно, оркестратор снимает дельту.
+# ``provider_mismatch`` липкий: один чужой провайдер портит всю сессию шлюза.
 STATS: dict[str, object] = {
     "provider": "",
+    "configured_provider": OPENROUTER_PROVIDER,
+    "requests": 0,
+    "provider_ok": True,
+    "provider_mismatch": False,
     "empty_retries_total": 0,
     "last_empty_retries": 0,
 }
@@ -77,7 +86,11 @@ async def health(_request: Request) -> Response:
             "key_present": API_KEY != "",
             "models": sorted(ALLOWED),
             "budget_remaining": await _budget_remaining(),
+            "configured_provider": OPENROUTER_PROVIDER,
             "provider": STATS["provider"],
+            "requests": STATS["requests"],
+            "provider_ok": STATS["provider_ok"],
+            "provider_mismatch": STATS["provider_mismatch"],
             "empty_retries_total": STATS["empty_retries_total"],
             "last_empty_retries": STATS["last_empty_retries"],
             "reasoning_max_tokens": REASONING_MAX_TOKENS,
@@ -137,7 +150,7 @@ async def chat(request: Request) -> Response:
         "Content-Type": request.headers.get("content-type", "application/json"),
     }
     upstream_url = f"{UPSTREAM.rstrip('/')}{UPSTREAM_CHAT_PATH}"
-    prepared = _inject_reasoning(body)
+    prepared = _prepare_upstream(body)
     upstream = await _post_with_retry(upstream_url, prepared, headers)
     empty_retries = 0
     while (
@@ -147,8 +160,7 @@ async def chat(request: Request) -> Response:
     ):
         empty_retries += 1
         upstream = await _post_with_retry(upstream_url, prepared, headers)
-    provider = _provider_name(upstream.content)
-    STATS["provider"] = provider
+    provider = _observe_provider(upstream.content)
     STATS["last_empty_retries"] = empty_retries
     total = STATS["empty_retries_total"]
     STATS["empty_retries_total"] = int(total) + empty_retries if isinstance(total, int) else empty_retries
@@ -182,6 +194,49 @@ async def _post_with_retry(
             await asyncio.sleep(delay)
         response = await CLIENT.post(url, content=body, headers=headers)
     return response
+
+
+def _prepare_upstream(body: bytes) -> bytes:
+    """Сначала пин провайдера, затем потолок reasoning."""
+    return _inject_reasoning(_inject_provider(body))
+
+
+def _inject_provider(body: bytes) -> bytes:
+    """Кладёт ``provider.only`` и запрещает fallback на каждый запрос."""
+    loaded = _json_object(body)
+    if loaded is None:
+        return body
+    current = loaded.get("provider")
+    pinned: dict[str, object] = {}
+    if isinstance(current, dict):
+        pinned = {str(key): value for key, value in current.items()}
+    pinned["only"] = [OPENROUTER_PROVIDER]
+    pinned["allow_fallbacks"] = False
+    loaded["provider"] = pinned
+    return json.dumps(loaded).encode("utf-8")
+
+
+def _observe_provider(content: bytes) -> str:
+    """Запоминает фактический провайдер ответа и считает запрос клиента."""
+    name = _provider_name(content)
+    _note_provider(name)
+    return name
+
+
+def _note_provider(name: str) -> None:
+    total = STATS["requests"]
+    STATS["requests"] = int(total) + 1 if isinstance(total, int) else 1
+    STATS["provider"] = name
+    if name != "" and not _provider_matches(name, OPENROUTER_PROVIDER):
+        STATS["provider_mismatch"] = True
+    mismatch = bool(STATS["provider_mismatch"])
+    STATS["provider_ok"] = not mismatch
+
+
+def _provider_matches(actual: str, configured: str) -> bool:
+    left = actual.strip().casefold()
+    right = configured.strip().casefold()
+    return left != "" and left == right
 
 
 def _inject_reasoning(body: bytes) -> bytes:

@@ -24,6 +24,8 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?нужен ключ OpenRouter}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       BENCH_ALLOWED_MODELS: ${BENCH_MODEL:-deepseek/deepseek-v4-flash}
+      BENCH_OPENROUTER_PROVIDER: ${BENCH_OPENROUTER_PROVIDER:-deepinfra}
+      BENCH_REASONING_MAX_TOKENS: ${BENCH_REASONING_MAX_TOKENS:-1024}
     ports:
       - "8080:8080"
     networks:
