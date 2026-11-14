@@ -12,9 +12,9 @@
 - **страта ``prior_twin``**: задачи, чья правка уже применялась в истории базы,
   отделяются, потому что там «найти готовый ответ» легче.
 
-Повторы: в run record нет номера повтора, поэтому он выводится детерминированно —
-внутри ``(задача, рука)`` записи сортируются по ``started`` и нумеруются. Так
-отчёт воспроизводим на одном и том же наборе записей.
+Повторы: запись со ``pairwise_slot_id`` уже несёт явный ``repetition``.
+Две такие записи с одним ``(задача, рука, повтор)`` — ошибка. Старые записи
+без слота нумеруются по ``started`` внутри ``(задача, рука)``.
 
 Здесь нет обращений к Docker и сети: модуль работает на уже сохранённых JSON.
 """
@@ -30,6 +30,7 @@ from typing import cast
 from beartype import beartype
 
 from db_pipeline.benchmark import completion, paths
+from db_pipeline.errors import PipelineError
 
 # Инструменты, которые меняют код: по ним определяется «первая правка».
 EDIT_TOOLS = ("edit", "write", "patch", "multiedit", "apply_patch", "str_replace")
@@ -114,6 +115,8 @@ def load_records(
             continue
         record = cast("dict[str, object]", raw)
         if record.get("func") and record.get("mode"):
+            if record.get("record_finalized") is False:
+                continue
             if experiment_id != "" and experiment_of(record) != experiment_id:
                 continue
             found.append(record)
@@ -133,15 +136,47 @@ def experiment_of(record: dict[str, object]) -> str:
 
 @beartype
 def assign_repetitions(records: list[dict[str, object]]) -> None:
-    """Нумерует однотипные записи по ``started``: повторы без внешнего счётчика."""
+    """Оставляет явный ``repetition`` слота и нумерует только старые записи.
+
+    Явный номер есть у записей с ``pairwise_slot_id``. Совпадение
+    ``(задача, рука, повтор)`` у двух таких записей — ошибка, а не второй прогон.
+    """
+    seen: set[tuple[str, str, int]] = set()
     groups: dict[tuple[str, str], list[dict[str, object]]] = {}
     for record in records:
-        key = (str(record["func"]), str(record["mode"]))
-        groups.setdefault(key, []).append(record)
-    for group in groups.values():
+        if _explicit_slot(record):
+            key = (
+                str(record["func"]),
+                str(record["mode"]),
+                _explicit_repetition(record),
+            )
+            if key in seen:
+                raise PipelineError("eval", f"дубль слота {key[0]} {key[1]} #{key[2]}")
+            seen.add(key)
+            continue
+        groups.setdefault((str(record["func"]), str(record["mode"])), []).append(record)
+    for (task, mode), group in groups.items():
         group.sort(key=lambda item: str(item.get("started", "")))
         for index, record in enumerate(group):
+            key = (task, mode, index)
+            if key in seen:
+                raise PipelineError("eval", f"дубль слота {task} {mode} #{index}")
             record["repetition"] = index
+            seen.add(key)
+
+
+@beartype
+def _explicit_slot(record: dict[str, object]) -> bool:
+    slot = record.get("pairwise_slot_id")
+    return isinstance(slot, str) and slot != ""
+
+
+@beartype
+def _explicit_repetition(record: dict[str, object]) -> int:
+    value = record.get("repetition")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PipelineError("eval", "у слота нет целого repetition")
+    return value
 
 
 @beartype
@@ -468,6 +503,7 @@ def build_report(
     selected = load_records(data, experiment_id) if records is None else list(records)
     if records is not None and experiment_id != "":
         selected = [record for record in selected if experiment_of(record) == experiment_id]
+    selected = [record for record in selected if record.get("record_finalized") is not False]
     records = [record for record in selected if record.get("mode") in modes]
     assign_repetitions(records)
     pairs = build_pairs(records)
@@ -612,7 +648,5 @@ def write_report(
     """Пишет отчёт в ``data/reports/pairwise-<section>.json``."""
     report = build_report(data, section, experiment_id=experiment_id)
     target = paths.reports_dir(data) / f"pairwise-{section}.json"
-    target.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    paths.write_atomic(target, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     return target

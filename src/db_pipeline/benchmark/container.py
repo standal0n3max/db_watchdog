@@ -408,6 +408,20 @@ def container_running(container_id: str, context: str = "") -> bool:
 
 
 @beartype
+def image_id(image: str, context: str = "") -> str:
+    """Полный id образа (``sha256:…``) или пустая строка, если образа нет."""
+    result = subprocess.run(
+        docker_command("image", "inspect", "-f", "{{.Id}}", image, context=context),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
+@beartype
 def container_exists(container_id: str, context: str = "") -> bool:
     result = subprocess.run(
         docker_command("inspect", "-f", "{{.Id}}", container_id, context=context),

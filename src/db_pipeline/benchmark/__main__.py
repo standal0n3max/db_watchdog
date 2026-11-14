@@ -33,7 +33,6 @@ from beartype import beartype
 from db_pipeline.benchmark import budget, container, convert, paths, security
 from db_pipeline.benchmark import telemetry
 from db_pipeline.benchmark.config import load_config, missing_langfuse_vars
-from db_pipeline.benchmark.eval import COMPARISON_LEFT, COMPARISON_RIGHT
 from db_pipeline.benchmark.runner import (
     GRAPH_MODES,
     PROMPT_DEFAULT,
@@ -125,6 +124,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if ok and not args.no_probe:
             report["langfuse_probe"] = telemetry.probe(cfg.otel)
     report["model"] = cfg.model
+    report["provider"] = cfg.provider
+    report["openrouter_provider"] = cfg.openrouter_provider
     report["context_length"] = cfg.context_length
     report["max_tokens"] = cfg.max_tokens
     report["experiment_id"] = cfg.experiment_id
@@ -418,99 +419,28 @@ def cmd_graph_canary(args: argparse.Namespace) -> int:
 
 @beartype
 def cmd_pairwise(args: argparse.Namespace) -> int:
-    """Парный прогон ``bare`` против ``graph`` с counterbalanced порядком.
-
-    Порядок рук чередуется по задачам и по повторам. Ошибка одной пары не
-    останавливает остальные: запись об ошибке всё равно попадает в отчёт.
-    Отчёт фильтруется по ``experiment_id`` из конфига.
-    """
-    from db_pipeline.benchmark import eval as eval_module
-    from db_pipeline.benchmark import session as smoke_session
+    """Парный прогон по слотам. ``--resume`` продолжает тот же checkpoint."""
+    from db_pipeline.benchmark import pairwise
 
     data = None if args.data is None else Path(args.data)
-    names = _pairwise_names(args, data)
-    if len(names) == 0:
-        print(json.dumps({"error": f"секция {args.section} пуста"}, ensure_ascii=False))
-        return 2
-    hands = (eval_module.COMPARISON_LEFT, eval_module.COMPARISON_RIGHT)
-    cfg = load_config()
-    guard = _budget_guard(args.no_budget_check, cfg.max_tokens)
-    if not guard["ok"]:
-        print(json.dumps({"error": "бюджет OpenRouter исчерпан", "budget": guard},
-                         ensure_ascii=False))
-        return 2
-    session = smoke_session.open_session(cfg, data)
-    records: list[dict[str, object]] = []
     try:
-        for index, name in enumerate(names):
-            for repetition in range(args.repeats):
-                order = _hand_order(index, repetition, hands)
-                for mode in order:
-                    records.append(
-                        _smoke_run(name, mode, data, session, args.prompt_variant)
-                    )
-    finally:
-        cleanup = smoke_session.close_session(session)
-    # Отчёт считается по записям этого прогона, а не по всему ``data/runs``:
-    # иначе probe смешался бы со старым tune и повторы перенумеровались.
-    report = eval_module.build_report(
-        data,
-        args.section,
-        repetitions=args.repeats,
-        records=records,
-        modes=hands,
-        experiment_id=cfg.experiment_id,
-    )
-    report["section"] = args.section
-    report["tasks"] = names
-    report["hands"] = list(hands)
-    report["prompt_variant"] = args.prompt_variant
-    report["experiment_id"] = cfg.experiment_id
-    report["budget"] = guard
-    report["cleanup"] = cleanup
-    label = args.report_label or args.section
-    target = paths.reports_dir(data) / f"pairwise-{label}.json"
-    target.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+        names = pairwise.resolve_names(args.section, list(args.tasks), data)
+        report = pairwise.run_batch(
+            data,
+            args.section,
+            args.repeats,
+            args.prompt_variant,
+            args.report_label or args.section,
+            names,
+            resume=bool(args.resume),
+            no_budget_check=bool(args.no_budget_check),
+        )
+    except PipelineError as exc:
+        print(json.dumps({"error": exc.reason}, ensure_ascii=False))
+        return 2
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    cleanup_ok = bool(cleanup.get("ok"))
-    return 0 if cleanup_ok else 1
-
-
-@beartype
-def _pairwise_names(args: argparse.Namespace, data: Path | None) -> list[str]:
-    """Список задач: явные ``--tasks`` либо секция split (``frozen`` — holdout)."""
-    from db_pipeline.benchmark.graph import split as split_module
-
-    if len(args.tasks) > 0:
-        return _task_names(args.tasks, data)
-    if args.section == "frozen":
-        return split_module.read_holdout()
-    return split_module.derive_split(data)[args.section]
-
-
-@beartype
-def _hand_order(
-    task_index: int,
-    repetition: int,
-    hands: tuple[str, str] = (COMPARISON_LEFT, COMPARISON_RIGHT),
-) -> tuple[str, str]:
-    """Чередование рук: чётная пара даёт левую руку первой, нечётная — правую."""
-    first = (task_index + repetition) % 2
-    return hands if first == 0 else (hands[1], hands[0])
-
-
-@beartype
-def _budget_guard(skip: bool, max_tokens: int) -> dict[str, object]:
-    """Проверяет бюджет OpenRouter перед batch, если его не отключили флагом."""
-    if skip:
-        return {"ok": True, "skipped": True}
-    report = budget.check_budget(
-        os.environ.get("OPENROUTER_API_KEY", ""),
-        max_tokens=max_tokens,
-    )
-    return report.to_dict()
+    code = report.get("exit_code")
+    return int(code) if isinstance(code, int) else 1
 
 
 @beartype
@@ -580,7 +510,7 @@ def cmd_graph_briefing_audit(args: argparse.Namespace) -> int:
     from db_pipeline.benchmark.graph import briefing_audit, split as split_module
 
     data = None if args.data is None else Path(args.data)
-    excluded = set(_task_names(args.exclude, data)) if len(args.exclude) > 0 else set()
+    excluded: set[str] = set(_task_names(args.exclude, data)) if len(args.exclude) > 0 else set()
     split = split_module.derive_split(data)
     names = [
         name
@@ -765,6 +695,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-budget-check",
         action="store_true",
         help="не проверять остаток кредитов OpenRouter перед batch",
+    )
+    pairwise_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="продолжить checkpoint того же report-label, не повторяя финальные слоты",
     )
     pairwise_parser.add_argument(
         "--prompt-variant",

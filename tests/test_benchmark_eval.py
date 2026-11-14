@@ -14,6 +14,7 @@ from typing import cast
 
 from db_pipeline.benchmark import eval as eval_module
 from db_pipeline.benchmark import completion
+from db_pipeline.errors import PipelineError
 
 
 def _record(
@@ -80,6 +81,23 @@ class PairBuildingTests(unittest.TestCase):
         self.assertFalse(pairs[1].bare_pass)
         self.assertTrue(pairs[1].graph_pass)
         self.assertTrue(pairs[1].discordant)
+
+    def test_explicit_repetition_is_kept_and_duplicates_fail(self) -> None:
+        first = _record("postgres__a", "bare", True, "2026-02-01T00:00:00+00:00")
+        second = _record("postgres__a", "bare", False, "2026-01-01T00:00:00+00:00")
+        first["pairwise_slot_id"] = "slot-a"
+        second["pairwise_slot_id"] = "slot-b"
+        first["repetition"] = 0
+        second["repetition"] = 0
+        with self.assertRaises(PipelineError):
+            eval_module.assign_repetitions([first, second])
+
+    def test_explicit_repetition_is_not_reassigned(self) -> None:
+        record = _record("postgres__a", "graph", True, "2026-02-01T00:00:00+00:00")
+        record["pairwise_slot_id"] = "slot-a"
+        record["repetition"] = 3
+        eval_module.assign_repetitions([record])
+        self.assertEqual(record["repetition"], 3)
 
     def test_assign_repetitions_is_stable_by_started(self) -> None:
         later = _record("postgres__a", "bare", False, "2026-02-01T00:00:00+00:00")
@@ -336,6 +354,20 @@ class ExperimentFilterTests(unittest.TestCase):
         report = eval_module.build_report(self.data, experiment_id="pilot")
         self.assertEqual(report["runs_total"], 2)
         self.assertEqual(report["experiment_id"], "pilot")
+
+    def test_unfinalized_record_is_skipped(self) -> None:
+        kept = _record("postgres__a", "bare", True, "2026-01-01T00:00:00+00:00")
+        dropped = _record("postgres__a", "graph", False, "2026-01-01T00:10:00+00:00")
+        kept["experiment_id"] = "pilot"
+        dropped["experiment_id"] = "pilot"
+        dropped["record_finalized"] = False
+        dropped["pairwise_slot_id"] = "slot-graph"
+        dropped["repetition"] = 0
+        self._write(kept)
+        self._write(dropped)
+        loaded = eval_module.load_records(self.data, "pilot")
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0]["mode"], "bare")
 
     def test_sign_test_collapses_repeats(self) -> None:
         pairs = [
